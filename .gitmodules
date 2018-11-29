@@ -1,0 +1,3 @@
+[submodule "binocle-c"]
+	path = binocle-c
+	url = git@gitlab.com:Santinelli/binocle-c.git
