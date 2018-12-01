@@ -42,6 +42,7 @@
 
 //#define GAMELOOP 1
 #define ATLAS_MAX_SUBTEXTURES 256
+#define GRID 32
 
 #if defined(WIN32)
 #define drand48() (rand() / (RAND_MAX + 1.0))
@@ -54,11 +55,6 @@ typedef enum game_state_t {
   GAME_STATE_GAMEOVER
 } game_state_t;
 
-struct wall {
-  kmAABB2 slices_original[200];
-  kmAABB2 slices[200];
-} wall;
-
 struct player_t {
   binocle_sprite sprite;
   kmVec2 pos;
@@ -67,26 +63,66 @@ struct player_t {
   bool dead;
 };
 
-uint32_t design_width = 240;
-uint32_t design_height = 320;
+struct entity_t {
+  binocle_sprite sprite;
+  kmVec2 pos;
+  float rot;
+  kmVec2 scale;
+  bool dead;
+  float dx;
+  float dy;
+  float xr;
+  float yr;
+  int cx;
+  int cy;
+  float frict;
+  int last_stable_y;
+  bool on_ground;
+  bool has_gravity;
+  float fall_start_y;
+  int dir;
+};
+
+struct tile_t {
+  int gid;
+  binocle_sprite sprite;
+};
+
+struct layer_t {
+  int tiles_gid[20*15];
+};
+
+// Window stuff
+uint32_t design_width = 640;
+uint32_t design_height = 480;
+
+// Binocle internal stuff
 binocle_window window;
 binocle_input input;
 binocle_viewport_adapter adapter;
 binocle_camera camera;
 binocle_gd gd;
+
+// Fonts
 binocle_bitmapfont *font = NULL;
 binocle_image font_image;
 binocle_texture font_texture;
 binocle_material font_material;
 binocle_sprite font_sprite;
 kmVec2 font_sprite_pos;
+
+// FPS stuff
 char fps_buffer[10];
+
+// Test stuff
 kmAABB2 testRect;
+
+// Game entities
+uint32_t map_width_in_tiles = 20;
+uint32_t map_height_in_tiles = 15;
 binocle_sprite enemy;
 kmVec2 enemy_pos;
 float enemy_rot = 0;
-struct wall top_wall;
-struct wall bottom_wall;
 long seed = 42;
 binocle_color color_grey;
 binocle_render_target screen_render_target;
@@ -100,15 +136,21 @@ binocle_music *music;
 binocle_texture player_texture;
 binocle_texture texture;
 int num_frames = 0;
-float gravity = 200.0f; //500.0f;
+float gravity = 0.09f;
 struct player_t player;
 binocle_texture atlas_texture;
 binocle_subtexture atlas_subtextures[ATLAS_MAX_SUBTEXTURES];
 int atlas_subtextures_num = 0;
-binocle_sprite heart_sprite;
+binocle_sprite santa_sprite;
 game_state_t game_state = GAME_STATE_MENU;
 bool show_menu = false;
 float scroller_x = 0.0f;
+struct entity_t hero;
+struct layer_t bg_layer;
+struct layer_t walls_layer;
+struct layer_t props_layer;
+struct tile_t tileset[256];
+binocle_texture tiles_texture;
 
 // Nuklear
 struct nk_context ctx;
@@ -116,7 +158,7 @@ struct nk_draw_null_texture nuklear_null;
 
 void build_scaling_viewport(int window_width, int window_height,
                             int design_width, int design_height,
-                            kmAABB2 *viewport, float *inverse_multiplier) {
+                            kmAABB2 *viewport, float *inverse_multiplier, kmMat4 *scale_matrix) {
   int multiplier = 1;
   float scaleX = (float)window_width / (float)design_width;
   float scaleY = (float)window_height / (float)design_height;
@@ -139,20 +181,18 @@ void build_scaling_viewport(int window_width, int window_height,
   viewport->max.x = design_width * multiplier;
   viewport->max.y = design_height * multiplier;
   *inverse_multiplier = 1.0f / multiplier;
-}
 
-void build_walls() {
-  for (int i = 0; i < 200; i++) {
-    bottom_wall.slices_original[i].min.x = i * 16;
-    bottom_wall.slices_original[i].min.y = 0;
-    bottom_wall.slices_original[i].max.x = i * 16 + 16;
-    bottom_wall.slices_original[i].max.y = (float)drand48() * 50;
-
-    top_wall.slices_original[i].min.x = i * 16;
-    top_wall.slices_original[i].min.y = design_height - (float)drand48() * 50;
-    top_wall.slices_original[i].max.x = i * 16 + 16;
-    top_wall.slices_original[i].max.y = design_height;
-  }
+  // compute the scaling matrix
+  float matMulX = (viewport->max.x - viewport->min.x)/design_width;
+  float matMulY = (viewport->max.y - viewport->min.y)/design_height;
+  kmMat4Identity(scale_matrix);
+  kmMat4 trans_matrix;
+  kmMat4Identity(&trans_matrix);
+  kmMat4Translation(&trans_matrix, diffX, diffY, 0.0f);
+  kmMat4 sc_matrix;
+  kmMat4Identity(&sc_matrix);
+  kmMat4Scaling(&sc_matrix, matMulX, matMulY, 1.0f);
+  kmMat4Multiply(scale_matrix, &trans_matrix, &sc_matrix);
 }
 
 void init_gui() {
@@ -182,7 +222,7 @@ void draw_gui() {
       /* fixed widget pixel width */
       //nk_layout_row_static(&ctx, 30, 80, 1);
       nk_layout_row_dynamic(&ctx, 30, 1);
-      nk_label(&ctx, "Helirun", NK_TEXT_CENTERED);
+      nk_label(&ctx, "Santa", NK_TEXT_CENTERED);
       if (nk_button_label(&ctx, "Start")) {
         player.dead = false;
         scroller_x = 0.0f;
@@ -228,7 +268,7 @@ void draw_gui() {
   }
 }
 
-void render_gui() {
+void render_gui(kmAABB2 viewport) {
   int max_vertex_buffer = 1024 * 512;
   int max_element_buffer = 1024 * 128;
   const struct nk_draw_command *cmd;
@@ -265,7 +305,7 @@ void render_gui() {
   binocle_gd_apply_shader(&gd, ui_shader);
   binocle_gd_clear(binocle_color_new(0, 0, 0, 0));
 
-  kmMat4 projectionMatrix = binocle_math_create_orthographic_matrix_off_center(0.0f, design_width, design_height, 0.0f, -1000.0f, 1000.0f);
+  kmMat4 projectionMatrix = binocle_math_create_orthographic_matrix_off_center(viewport.min.x, viewport.max.x, viewport.max.y, viewport.min.y, -1000.0f, 1000.0f);
   kmMat4 viewMatrix;
   kmMat4Identity(&viewMatrix);
   kmMat4 modelMatrix;
@@ -328,12 +368,36 @@ void pass_input_to_gui(binocle_input *input) {
   nk_input_end(&ctx);
 }
 
+void build_bg(int *data, int data_count, int firstgid, int width, int height) {
+  for (int h = 0 ; h < height ; h++) {
+    for (int w = 0 ; w < width ; w++) {
+      bg_layer.tiles_gid[h * width + w] = data[((height - 1) - h) * width + w] - firstgid;
+    }
+  }
+}
+
+void build_walls(int *data, int data_count, int firstgid, int width, int height) {
+  for (int h = 0 ; h < height ; h++) {
+    for (int w = 0 ; w < width ; w++) {
+      walls_layer.tiles_gid[h * width + w] = data[((height - 1) - h) * width + w] - firstgid;
+    }
+  }
+}
+
+void build_props(int *data, int data_count, int firstgid, int width, int height) {
+  for (int h = 0 ; h < height ; h++) {
+    for (int w = 0 ; w < width ; w++) {
+      props_layer.tiles_gid[h * width + w] = data[((height - 1) - h) * width + w] - firstgid;
+    }
+  }
+}
+
 void load_tilemap() {
   char filename[1024];
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "tilemap.json");
+  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "map.json");
   char *json = NULL;
   size_t json_length = 0;
-  if (!binocle_sdl_load_text_file(filename, json, &json_length)) {
+  if (!binocle_sdl_load_text_file(filename, &json, &json_length)) {
     return;
   }
 
@@ -343,6 +407,8 @@ void load_tilemap() {
   int w = map->width;
   int h = map->height;
 
+  cute_tiled_tileset_t *tileset = map->tilesets;
+
   // loop over the map's layers
   cute_tiled_layer_t* layer = map->layers;
   while (layer)
@@ -350,8 +416,13 @@ void load_tilemap() {
     int* data = layer->data;
     int data_count = layer->data_count;
 
-    // do something with the tile data
-    //UserFunction_HandleTiles(data, data_count);
+    if (strcmp(layer->name.ptr, "bg") == 0) {
+      build_bg(data, data_count, tileset->firstgid, w, h);
+    } else if (strcmp(layer->name.ptr, "walls") == 0) {
+      build_walls(data, data_count, tileset->firstgid, w, h);
+    } else if (strcmp(layer->name.ptr, "props") == 0) {
+      build_props(data, data_count, tileset->firstgid, w, h);
+    }
 
     layer = layer->next;
   }
@@ -361,7 +432,102 @@ void load_tilemap() {
 
 }
 
+bool level_has_any_collision(int cx, int cy) {
+  if (walls_layer.tiles_gid[cy * map_width_in_tiles + cx] != -1) {
+    return true;
+  }
+  return false;
+}
+
+bool level_has_hard_collision(int cx, int cy) {
+  if (walls_layer.tiles_gid[cy * map_width_in_tiles + cx] == 9) {
+    return true;
+  }
+  return false;
+}
+
+void entity_update(struct entity_t *e) {
+  float repel = 0.08f;
+  float repelF = 0.6f;
+
+  // X
+  e->xr += e->dx;
+  if (e->xr >= 0.9f && level_has_hard_collision(e->cx + 1, e->cy) ) {
+    e->xr = 0.9f;
+  }
+  if (e->xr > 0.8f && level_has_hard_collision(e->cx + 1, e->cy) ) {
+    e->dx *= repelF;
+    e->dx -= repel;
+  }
+
+  if (e->xr <= 0.1f && level_has_hard_collision(e->cx - 1, e->cy) ) {
+    e->xr = 0.1f;
+  }
+  if (e->xr < 0.2f && level_has_hard_collision(e->cx - 1,e->cy) ) {
+    e->dx *= repelF;
+    e->dx += repel;
+  }
+
+  while (e->xr > 1) {
+    e->xr--;
+    e->cx++;
+  }
+  while(e->xr < 0) {
+    e->xr++;
+    e->cx--;
+  }
+  e->dx *= e->frict;
+  if (fabsf(e->dx) <= 0.01f ) {
+    e->dx = 0;
+  }
+
+  // Y
+  if (e->has_gravity && !e->on_ground) {
+    e->dy += gravity;
+  }
+  e->yr += e->dy;
+  if (e->dy <= 0) {
+    e->fall_start_y = e->pos.y;
+  }
+  if(e->yr > 1 && level_has_any_collision(e->cx, e->cy + 1) ) {
+    e->dy = 0;
+    e->yr = 1;
+    //onLand( (e->pos.y-e->fall_start_y)/GRID );
+  }
+  if(e->yr <= 0.6f && level_has_hard_collision(e->cx, e->cy - 1) ) {
+    e->dy = 0;
+    e->yr = 0.6f;
+  }
+  if(e->yr < 0.2f && level_has_hard_collision(e->cx, e->cy - 1) ) {
+    e->dy *= repelF;
+    e->dy += repel;
+  }
+
+  while (e->yr > 1 ) {
+    e->yr--;
+    e->cy++;
+  }
+  while (e->yr < 0 ) {
+    e->yr++;
+    e->cy--;
+  }
+  e->dy *= e->frict;
+  if (fabsf(e->dy) <= 0.01f) {
+    e->dy = 0;
+  }
+
+  if(e->on_ground) {
+    e->last_stable_y = e->cy;
+  }
+
+  e->pos.x = (int64_t)((e->cx + e->xr) * GRID);
+  e->pos.y = (int64_t)((e->cy + e->yr) * GRID);
+  e->scale.x = e->dir;
+}
+
 void game_update() {
+  entity_update(&hero);
+
   if (player.dead) {
     game_state = GAME_STATE_GAMEOVER;
     return;
@@ -413,28 +579,6 @@ void game_update() {
     player_collider.max.x = player.pos.x + player.sprite.subtexture.rect.max.x;
     player_collider.max.y = player.pos.y + player.sprite.subtexture.rect.max.y;
 
-    for (int i = 0; i < 200; i++) {
-      bottom_wall.slices[i].min.x = bottom_wall.slices_original[i].min.x - scroller_x;
-      bottom_wall.slices[i].min.y = bottom_wall.slices_original[i].min.y;
-      bottom_wall.slices[i].max.x = bottom_wall.slices_original[i].max.x - scroller_x;
-      bottom_wall.slices[i].max.y = bottom_wall.slices_original[i].max.y;
-
-      top_wall.slices[i].min.x = top_wall.slices_original[i].min.x - scroller_x;
-      top_wall.slices[i].min.y = top_wall.slices_original[i].min.y;
-      top_wall.slices[i].max.x = top_wall.slices_original[i].max.x - scroller_x;
-      top_wall.slices[i].max.y = top_wall.slices_original[i].max.y;
-
-      if (kmAABB2ContainsAABB(&bottom_wall.slices[i], &player_collider)) {
-        player.dead = true;
-        break;
-      }
-      if (kmAABB2ContainsAABB(&top_wall.slices[i], &player_collider)) {
-        player.dead = true;
-        break;
-      }
-    }
-
-
     enemy_rot += 50 * (1.0 / window.frame_time);
     enemy_rot = (int64_t)enemy_rot % 360;
 
@@ -464,25 +608,40 @@ void game_render() {
   binocle_sprite_draw(enemy, &gd, (int64_t)enemy_pos.x, (int64_t)enemy_pos.y,
                       vp_design, enemy_rot * (float)M_PI / 180.0f, 2);
 
-  // Walls
-  for (int i = 0; i < 200; i++) {
-    // binocle_gd_draw_rect(&gd, bottom_wall.slices[i], color_grey,
-    // binocle_camera_get_viewport(camera),
-    // binocle_camera_get_transform_matrix(&camera)); binocle_gd_draw_rect(&gd,
-    // top_wall.slices[i], color_grey, binocle_camera_get_viewport(camera),
-    // binocle_camera_get_transform_matrix(&camera));
-    binocle_gd_apply_shader(&gd, default_shader);
-    binocle_gd_draw_rect(&gd, bottom_wall.slices[i], color_grey, vp_design,
-                         identity_mat);
-    binocle_gd_draw_rect(&gd, top_wall.slices[i], color_grey, vp_design,
-                         identity_mat);
+  // Background
+  for (int h = 0 ; h < map_height_in_tiles ; h++) {
+    for (int w = 0 ; w < map_width_in_tiles ; w++ ) {
+      if (bg_layer.tiles_gid[h * map_width_in_tiles + w] != -1) {
+        binocle_sprite_draw(tileset[bg_layer.tiles_gid[h * map_width_in_tiles + w]].sprite, &gd, w * 32, h * 32,
+                            vp_design, 0, 1);
+      }
+    }
   }
 
-  // Heart
-  /*
-  binocle_sprite_draw(heart_sprite, &gd, 20, 20,
+  // Walls
+  for (int h = 0 ; h < map_height_in_tiles ; h++) {
+    for (int w = 0 ; w < map_width_in_tiles ; w++ ) {
+      if (walls_layer.tiles_gid[h * map_width_in_tiles + w] != -1) {
+        binocle_sprite_draw(tileset[walls_layer.tiles_gid[h * map_width_in_tiles + w]].sprite, &gd, w * 32, h * 32, vp_design, 0, 1);
+      }
+    }
+  }
+
+  // Props
+  for (int h = 0 ; h < map_height_in_tiles ; h++) {
+    for (int w = 0 ; w < map_width_in_tiles ; w++ ) {
+      if (props_layer.tiles_gid[h * map_width_in_tiles + w] != -1) {
+        binocle_sprite_draw(tileset[props_layer.tiles_gid[h * map_width_in_tiles + w]].sprite, &gd, w * 32, h * 32,
+                            vp_design, 0, 1);
+      }
+    }
+  }
+
+  // Santa
+
+  binocle_sprite_draw(hero.sprite, &gd, (int64_t)hero.pos.x, (int64_t)hero.pos.y,
                       vp_design, 0, 1);
-                      */
+
 }
 
 void main_loop() {
@@ -542,7 +701,7 @@ void main_loop() {
   // GUI
   if (show_menu) {
     draw_gui();
-    render_gui();
+    render_gui(vp_design);
   }
 
   // Score and FPS
@@ -565,9 +724,10 @@ void main_loop() {
   {
     kmAABB2 vp;
     float multiplier = 1;
-    build_scaling_viewport(window.width, window.height, design_width,
-                           design_height, &vp, &multiplier);
     kmMat4 camera_transform_mat;
+    kmMat4Identity(&camera_transform_mat);
+    build_scaling_viewport(window.width, window.height, design_width,
+                           design_height, &vp, &multiplier, &camera_transform_mat);
     kmMat4Identity(&camera_transform_mat);
 
     binocle_gd_set_render_target(screen_render_target);
@@ -588,14 +748,15 @@ void main_loop() {
   // design_height};
   kmAABB2 vp;
   float multiplier = 1;
+  kmMat4 camera_transform_mat;
+  kmMat4Identity(&camera_transform_mat);
   build_scaling_viewport(window.width, window.height, design_width,
-                         design_height, &vp, &multiplier);
+                         design_height, &vp, &multiplier, &camera_transform_mat);
+  kmMat4Identity(&camera_transform_mat);
   binocle_gd_apply_viewport(vp);
   binocle_gd_set_uniform_float(quad_shader, "time", time);
   binocle_gd_set_uniform_float2(quad_shader, "resolution", design_width,
                                 design_height);
-  kmMat4 camera_transform_mat;
-  kmMat4Identity(&camera_transform_mat);
   // kmMat4Translation(&camera_transform_mat, 1.0f -
   // (float)design_width/(float)window.width, 1.0f -
   // (float)design_height/(float)window.height, 0);
@@ -647,7 +808,7 @@ int main(int argc, char *argv[]) {
   // Init SDL
   binocle_sdl_init();
   // Create the window
-  window = binocle_window_new(design_width, design_height, "Helirun");
+  window = binocle_window_new(design_width, design_height, "Santa");
   binocle_window_set_minimum_size(&window, design_width, design_height);
   // Updates the window size in case we're on mobile and getting a forced
   // dimension
@@ -739,19 +900,46 @@ int main(int argc, char *argv[]) {
   binocle_sprite_add_animation_with_frames(&enemy, 0, true, 1, frames, 3);
   binocle_sprite_play(&enemy, 0, true);
 
-  // Load a sprite atlas
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "testatlas.png");
+  // Load the sprite atlas with all the entities
+  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "entities.png");
   binocle_image atlas_image = binocle_image_load(filename);
   atlas_texture = binocle_texture_from_image(atlas_image);
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "testatlas.json");
+  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "entities.json");
   binocle_atlas_load_texturepacker(filename, &atlas_texture, atlas_subtextures, &atlas_subtextures_num);
 
-  // Create a heart sprite from the sprite atlas
-  binocle_material heart_material = binocle_material_new();
-  heart_material.texture = &atlas_texture;
-  heart_material.shader = &default_shader;
-  heart_sprite = binocle_sprite_from_material(&heart_material);
-  heart_sprite.subtexture = atlas_subtextures[8];
+  // Create the player
+  binocle_material hero_material = binocle_material_new();
+  hero_material.texture = &atlas_texture;
+  hero_material.shader = &default_shader;
+  hero.rot = 0;
+  hero.sprite = binocle_sprite_from_material(&hero_material);
+  hero.sprite.subtexture = atlas_subtextures[0];
+  hero.sprite.origin.x = 0.5f * hero.sprite.subtexture.rect.max.x;
+  hero.sprite.origin.y = 0.5f * hero.sprite.subtexture.rect.max.y;
+  hero.dx = 0;
+  hero.dy = 0;
+  hero.xr = 0.5;
+  hero.yr = 1.0;
+  hero.cx = 7;
+  hero.cy = 3;
+  hero.frict = 0.8;
+  hero.has_gravity = true;
+  hero.dir = 1;
+
+  // Create the tileset
+  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "tiles.png");
+  binocle_image tiles_image = binocle_image_load(filename);
+  tiles_texture = binocle_texture_from_image(tiles_image);
+  binocle_material tileset_material = binocle_material_new();
+  tileset_material.texture = &tiles_texture;
+  tileset_material.shader = &default_shader;
+  for (int i = 0 ; i < 256 ; i++) {
+    tileset[i].gid = i;
+    tileset[i].sprite = binocle_sprite_from_material(&tileset_material);
+    tileset[i].sprite.subtexture = binocle_subtexture_with_texture(&tiles_texture, 32*i, 0, 32, 32);
+  }
+
+
 
   init_fonts();
 
@@ -760,7 +948,7 @@ int main(int argc, char *argv[]) {
   testRect.max.x = design_width;
   testRect.max.y = design_height;
 
-  build_walls();
+  load_tilemap();
 
   gd = binocle_gd_new();
   binocle_gd_init(&gd);
