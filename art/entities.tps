@@ -34,7 +34,7 @@
         <key>dataFormat</key>
         <string>json-array</string>
         <key>textureFileName</key>
-        <filename></filename>
+        <filename>../assets/entities.png</filename>
         <key>flipPVR</key>
         <false/>
         <key>pvrCompressionQuality</key>
@@ -132,7 +132,7 @@
             <key>data</key>
             <struct type="DataFile">
                 <key>name</key>
-                <filename></filename>
+                <filename>../assets/entities.json</filename>
             </struct>
         </map>
         <key>multiPack</key>
@@ -181,15 +181,19 @@
         </struct>
         <key>individualSpriteSettings</key>
         <map type="IndividualSpriteSettingsMap">
-            <key type="filename">../assets/tiles_0.png</key>
-            <key type="filename">../assets/tiles_1.png</key>
-            <key type="filename">../assets/tiles_2.png</key>
-            <key type="filename">../assets/tiles_3.png</key>
-            <key type="filename">../assets/tiles_4.png</key>
-            <key type="filename">../assets/tiles_5.png</key>
-            <key type="filename">../assets/tiles_6.png</key>
-            <key type="filename">../assets/tiles_7.png</key>
-            <key type="filename">../assets/tiles_8.png</key>
+            <key type="filename">../assets/tiles_00.png</key>
+            <key type="filename">../assets/tiles_01.png</key>
+            <key type="filename">../assets/tiles_02.png</key>
+            <key type="filename">../assets/tiles_03.png</key>
+            <key type="filename">../assets/tiles_04.png</key>
+            <key type="filename">../assets/tiles_05.png</key>
+            <key type="filename">../assets/tiles_06.png</key>
+            <key type="filename">../assets/tiles_07.png</key>
+            <key type="filename">../assets/tiles_08.png</key>
+            <key type="filename">../assets/tiles_09.png</key>
+            <key type="filename">../assets/tiles_10.png</key>
+            <key type="filename">../assets/tiles_11.png</key>
+            <key type="filename">../assets/tiles_12.png</key>
             <struct type="IndividualSpriteSettings">
                 <key>pivotPoint</key>
                 <point_f>0.5,0.5</point_f>
@@ -205,15 +209,19 @@
         </map>
         <key>fileList</key>
         <array>
-            <filename>../assets/tiles_0.png</filename>
-            <filename>../assets/tiles_1.png</filename>
-            <filename>../assets/tiles_2.png</filename>
-            <filename>../assets/tiles_3.png</filename>
-            <filename>../assets/tiles_4.png</filename>
-            <filename>../assets/tiles_5.png</filename>
-            <filename>../assets/tiles_6.png</filename>
-            <filename>../assets/tiles_7.png</filename>
-            <filename>../assets/tiles_8.png</filename>
+            <filename>../assets/tiles_00.png</filename>
+            <filename>../assets/tiles_01.png</filename>
+            <filename>../assets/tiles_02.png</filename>
+            <filename>../assets/tiles_03.png</filename>
+            <filename>../assets/tiles_04.png</filename>
+            <filename>../assets/tiles_05.png</filename>
+            <filename>../assets/tiles_06.png</filename>
+            <filename>../assets/tiles_07.png</filename>
+            <filename>../assets/tiles_08.png</filename>
+            <filename>../assets/tiles_09.png</filename>
+            <filename>../assets/tiles_10.png</filename>
+            <filename>../assets/tiles_11.png</filename>
+            <filename>../assets/tiles_12.png</filename>
         </array>
         <key>ignoreFileList</key>
         <array/>
