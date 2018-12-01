@@ -44,6 +44,7 @@
 #define ATLAS_MAX_SUBTEXTURES 256
 #define GRID 32
 #define MAX_ELVES 4
+#define MAX_SPAWNERS 3
 
 #if defined(WIN32)
 #define drand48() (rand() / (RAND_MAX + 1.0))
@@ -55,6 +56,13 @@ typedef enum game_state_t {
   GAME_STATE_RUN,
   GAME_STATE_GAMEOVER
 } game_state_t;
+
+typedef enum item_kind_t {
+  ITEM_KIND_NONE,
+  ITEM_KIND_TOY,
+  ITEM_KIND_PACKAGE,
+  ITEM_KIND_WRAP
+} item_kind_t;
 
 struct player_t {
   binocle_sprite sprite;
@@ -82,6 +90,8 @@ struct entity_t {
   bool has_gravity;
   float fall_start_y;
   int dir;
+  item_kind_t carried_item_kind;
+  struct entity_t *carried_entity;
 };
 
 struct tile_t {
@@ -91,6 +101,13 @@ struct tile_t {
 
 struct layer_t {
   int tiles_gid[20*15];
+};
+
+struct spawner_t {
+  item_kind_t item_kind;
+  struct entity_t entity; // Used for physical rendering
+  float cooldown;
+  float cooldown_original;
 };
 
 // Window stuff
@@ -153,6 +170,9 @@ struct layer_t props_layer;
 struct tile_t tileset[256];
 binocle_texture tiles_texture;
 struct entity_t elves[MAX_ELVES];
+struct spawner_t spawners[MAX_SPAWNERS];
+int score = 0;
+binocle_material item_material;
 
 // Nuklear
 struct nk_context ctx;
@@ -448,6 +468,17 @@ void build_props(int *data, int data_count, int firstgid, int width, int height)
   }
 }
 
+void build_spawner(int index, float x, float y, item_kind_t item_kind) {
+  spawners[index].entity.pos.x = x;
+  spawners[index].entity.pos.y = (map_height_in_tiles - 1) * GRID - y;
+  spawners[index].entity.cx = (int)(x/GRID);
+  spawners[index].entity.cy = (int)(y/GRID);
+  spawners[index].entity.xr = (spawners[index].entity.pos.x - spawners[index].entity.cx * GRID) / GRID;
+  spawners[index].entity.yr = (spawners[index].entity.pos.y - spawners[index].entity.cy * GRID) / GRID;
+  spawners[index].entity.has_gravity = false;
+  spawners[index].item_kind = item_kind;
+}
+
 void load_tilemap() {
   char filename[1024];
   sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "map.json");
@@ -478,6 +509,19 @@ void load_tilemap() {
       build_walls(data, data_count, tileset->firstgid, w, h);
     } else if (strcmp(layer->name.ptr, "props") == 0) {
       build_props(data, data_count, tileset->firstgid, w, h);
+    } else if (strcmp(layer->name.ptr, "items") == 0) {
+      cute_tiled_object_t *object = layer->objects;
+      while (object) {
+        if (strcmp(object->name.ptr, "toys") == 0) {
+          build_spawner(0, object->x, object->y, ITEM_KIND_TOY);
+        } else if (strcmp(object->name.ptr, "packs") == 0) {
+          build_spawner(1, object->x, object->y, ITEM_KIND_PACKAGE);
+        } else if (strcmp(object->name.ptr, "wraps") == 0) {
+          build_spawner(2, object->x, object->y, ITEM_KIND_WRAP);
+        }
+
+        object = object->next;
+      }
     }
 
     layer = layer->next;
@@ -506,6 +550,41 @@ bool level_has_hard_collision(int cx, int cy) {
     return true;
   }
   return false;
+}
+
+bool spawn_item(struct entity_t *entity, item_kind_t item_kind) {
+  entity->rot = 0;
+  entity->sprite = binocle_sprite_from_material(&item_material);
+  if (item_kind == ITEM_KIND_TOY) {
+    entity->sprite.subtexture = atlas_subtextures[9];
+  } else if (item_kind == ITEM_KIND_PACKAGE) {
+    entity->sprite.subtexture = atlas_subtextures[10];
+  } else if (item_kind == ITEM_KIND_WRAP) {
+    entity->sprite.subtexture = atlas_subtextures[2];
+  }
+  entity->sprite.origin.x = 0.5f * entity->sprite.subtexture.rect.max.x;
+  entity->sprite.origin.y = 0.0f * entity->sprite.subtexture.rect.max.y;
+  entity->dx = 0;
+  entity->dy = 0;
+  entity->xr = 0.5;
+  entity->yr = 1.0;
+  entity->cx = 0;
+  entity->cy = 0;
+  entity->frict = 0.8;
+  entity->has_gravity = false;
+  entity->dir = 1;
+  entity->scale.x = 1;
+  entity->scale.y = 1;
+  return true;
+}
+
+void entity_set_position(struct entity_t *entity, float x, float y) {
+  entity->pos.x = x;
+  entity->pos.y = y;
+  entity->cx = (int)(x/GRID);
+  entity->cy = (int)(y/GRID);
+  entity->xr = (entity->pos.x - entity->cx * GRID) / GRID;
+  entity->yr = (entity->pos.y - entity->cy * GRID) / GRID;
 }
 
 void entity_update(struct entity_t *e) {
@@ -593,16 +672,31 @@ void entity_update(struct entity_t *e) {
 void elves_update() {
   float speed = 0.22f;
   for (int i = 0 ; i < MAX_ELVES ; i++) {
-    if (elves[i].dir == 1) {
-      elves[i].dx += speed * (1.0f / window.frame_time);
-    } else {
-      elves[i].dx -= speed * (1.0f / window.frame_time);
+    if (elves[i].dead) {
+      continue;
     }
 
-    if (elves[i].cx == 1 && elves[i].dir == -1) {
+    if (elves[i].carried_item_kind == ITEM_KIND_NONE) {
+      if (elves[i].dir == 1) {
+        elves[i].dx += speed * (1.0f / window.frame_time);
+      } else {
+        elves[i].dx -= speed * (1.0f / window.frame_time);
+      }
+
+      if (elves[i].cx == 1 && elves[i].dir == -1) {
+        elves[i].dir = 1;
+      } else if (elves[i].cx == map_width_in_tiles - 2 && elves[i].dir == 1) {
+        elves[i].dir = -1;
+      }
+    } else if (elves[i].carried_item_kind == ITEM_KIND_WRAP) {
       elves[i].dir = 1;
-    } else if (elves[i].cx == map_width_in_tiles - 2 && elves[i].dir == 1) {
-      elves[i].dir = -1;
+      elves[i].dx += speed * (1.0f / window.frame_time);
+      if (elves[i].cx == map_width_in_tiles - 2) {
+        elves[i].carried_item_kind = ITEM_KIND_NONE;
+        free(elves[i].carried_entity);
+        elves[i].carried_entity = NULL;
+        score += 1;
+      }
     }
   }
 }
@@ -610,8 +704,19 @@ void elves_update() {
 void game_update() {
   entity_update(&hero);
 
+  if (hero.carried_entity != NULL) {
+    entity_set_position(hero.carried_entity, hero.pos.x, hero.pos.y);
+  }
+
   for (int i = 0 ; i < MAX_ELVES ; i++) {
     entity_update((&elves[i]));
+    if (elves[i].carried_entity != NULL) {
+      entity_set_position(elves[i].carried_entity, elves[i].pos.x, elves[i].pos.y);
+    }
+  }
+
+  for (int i = 0 ; i < MAX_SPAWNERS ; i++) {
+    entity_update((&spawners[i].entity));
   }
 
   if (player.dead) {
@@ -636,6 +741,43 @@ void game_update() {
       //binocle_audio_play_sound(&audio, jump_sound);
     }
   } else if (binocle_input_is_key_pressed(input, KEY_DOWN)) {
+  }
+
+  if (binocle_input_is_key_pressed(input, KEY_SPACE)) {
+    // Interaction with spawners
+    for (int i = 0 ; i < MAX_SPAWNERS ; i++) {
+      if (hero.cx == spawners[i].entity.cx
+      && hero.cy == spawners[i].entity.cy) {
+        if (hero.carried_item_kind == ITEM_KIND_NONE && spawners[i].item_kind == ITEM_KIND_TOY) {
+          hero.carried_item_kind = ITEM_KIND_TOY;
+          hero.carried_entity = malloc(sizeof(struct entity_t));
+          spawn_item(hero.carried_entity, ITEM_KIND_TOY);
+        } else if (hero.carried_item_kind == ITEM_KIND_TOY && spawners[i].item_kind == ITEM_KIND_PACKAGE) {
+          hero.carried_item_kind = ITEM_KIND_PACKAGE;
+          free(hero.carried_entity);
+          hero.carried_entity = malloc(sizeof(struct entity_t));
+          spawn_item(hero.carried_entity, ITEM_KIND_PACKAGE);
+        } else if (hero.carried_item_kind == ITEM_KIND_PACKAGE && spawners[i].item_kind == ITEM_KIND_WRAP) {
+          hero.carried_item_kind = ITEM_KIND_WRAP;
+          free(hero.carried_entity);
+          hero.carried_entity = malloc(sizeof(struct entity_t));
+          spawn_item(hero.carried_entity, ITEM_KIND_WRAP);
+        }
+      }
+    }
+
+    // Interaction with elves
+    for (int i = 0 ; i < MAX_ELVES ; i++) {
+      if (hero.cx == elves[i].cx
+          && hero.cy == elves[i].cy) {
+        if (hero.carried_item_kind == ITEM_KIND_WRAP && elves[i].carried_item_kind == ITEM_KIND_NONE) {
+          elves[i].carried_item_kind = ITEM_KIND_WRAP;
+          elves[i].carried_entity = hero.carried_entity;
+          hero.carried_item_kind = ITEM_KIND_NONE;
+          hero.carried_entity = NULL;
+        }
+      }
+    }
   }
 
   elves_update();
@@ -731,16 +873,31 @@ void game_render() {
     }
   }
 
+  // Spawners
+  for (int i = 0 ; i < MAX_SPAWNERS ; i++) {
+    binocle_sprite_draw(spawners[i].entity.sprite, &gd, (int64_t)spawners[i].entity.pos.x, (int64_t)spawners[i].entity.pos.y,
+                        vp_design, 0, spawners[i].entity.scale);
+  }
+
   // Elves
   for (int i = 0 ; i < MAX_ELVES ; i++) {
     binocle_sprite_draw(elves[i].sprite, &gd, (int64_t)elves[i].pos.x, (int64_t)elves[i].pos.y,
                         vp_design, 0, elves[i].scale);
+    if (elves[i].carried_entity != NULL) {
+      binocle_sprite_draw(elves[i].carried_entity->sprite, &gd, (int64_t)elves[i].carried_entity->pos.x, (int64_t)elves[i].carried_entity->pos.y,
+                          vp_design, 0, elves[i].carried_entity->scale);
+    }
   }
 
   // Santa
 
   binocle_sprite_draw(hero.sprite, &gd, (int64_t)hero.pos.x, (int64_t)hero.pos.y,
                       vp_design, 0, hero.scale);
+  if (hero.carried_entity != NULL) {
+    binocle_sprite_draw(hero.carried_entity->sprite, &gd, (int64_t)hero.carried_entity->pos.x, (int64_t)hero.carried_entity->pos.y,
+                        vp_design, 0, hero.carried_entity->scale);
+  }
+
 
 }
 
@@ -810,7 +967,9 @@ void main_loop() {
   // binocle_bitmapfont_draw_string(font, "SCORE: 0", 32, &gd, 10,
   // window.height-36, binocle_camera_get_viewport(camera),
   // binocle_color_black(), binocle_camera_get_transform_matrix(&camera));
-  binocle_bitmapfont_draw_string(font, "SCORE: 0", 32, &gd, 10,
+  char score_string[50];
+  sprintf(score_string, "SCORE: %d", score);
+  binocle_bitmapfont_draw_string(font, score_string, 32, &gd, 10,
                                  design_height - 36, vp_design,
                                  binocle_color_white(), identity_mat);
   uint64_t fps = binocle_window_get_fps(&window);
@@ -1009,6 +1168,11 @@ int main(int argc, char *argv[]) {
   sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "entities.json");
   binocle_atlas_load_texturepacker(filename, &atlas_texture, atlas_subtextures, &atlas_subtextures_num);
 
+  // Create the material for items
+  item_material = binocle_material_new();
+  item_material.texture = &atlas_texture;
+  item_material.shader = &default_shader;
+
   // Create the player
   binocle_material hero_material = binocle_material_new();
   hero_material.texture = &atlas_texture;
@@ -1036,8 +1200,8 @@ int main(int argc, char *argv[]) {
     elves[i].rot = 0;
     elves[i].sprite = binocle_sprite_from_material(&elves_material);
     elves[i].sprite.subtexture = atlas_subtextures[1];
-    elves[i].sprite.origin.x = 0.5f * hero.sprite.subtexture.rect.max.x;
-    elves[i].sprite.origin.y = 0.0f * hero.sprite.subtexture.rect.max.y;
+    elves[i].sprite.origin.x = 0.5f * elves[i].sprite.subtexture.rect.max.x;
+    elves[i].sprite.origin.y = 0.0f * elves[i].sprite.subtexture.rect.max.y;
     elves[i].dx = 0;
     elves[i].dy = 0;
     elves[i].xr = 0.5;
@@ -1049,6 +1213,30 @@ int main(int argc, char *argv[]) {
     elves[i].dir = random_int(0, 1) == 0 ? -1 : 1;
   }
 
+  // Create the spawners
+  binocle_material spawner_material = binocle_material_new();
+  spawner_material.texture = &atlas_texture;
+  spawner_material.shader = &default_shader;
+  for (int i = 0 ; i < MAX_SPAWNERS ; i++) {
+    spawners[i].entity.rot = 0;
+    spawners[i].entity.sprite = binocle_sprite_from_material(&spawner_material);
+    spawners[i].entity.sprite.subtexture = atlas_subtextures[9+i];
+    spawners[i].entity.sprite.origin.x = 0.5f * spawners[i].entity.sprite.subtexture.rect.max.x;
+    spawners[i].entity.sprite.origin.y = 0.0f * spawners[i].entity.sprite.subtexture.rect.max.y;
+    spawners[i].entity.dx = 0;
+    spawners[i].entity.dy = 0;
+    spawners[i].entity.xr = 0.5;
+    spawners[i].entity.yr = 1.0;
+    spawners[i].entity.cx = 0;
+    spawners[i].entity.cy = 0;
+    spawners[i].entity.frict = 0.8;
+    spawners[i].entity.has_gravity = true;
+    spawners[i].entity.dir = 1;
+    spawners[i].entity.scale.x = 1;
+    spawners[i].entity.scale.y = 1;
+  }
+  
+  
   // Create the tileset
   sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "tiles.png");
   binocle_image tiles_image = binocle_image_load(filename);
