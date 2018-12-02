@@ -194,6 +194,27 @@
             <key type="filename">../assets/tiles_10.png</key>
             <key type="filename">../assets/tiles_11.png</key>
             <key type="filename">../assets/tiles_12.png</key>
+            <key type="filename">../assets/tiles_13.png</key>
+            <key type="filename">../assets/tiles_14.png</key>
+            <key type="filename">../assets/tiles_15.png</key>
+            <key type="filename">../assets/tiles_16.png</key>
+            <key type="filename">../assets/tiles_17.png</key>
+            <key type="filename">../assets/tiles_18.png</key>
+            <key type="filename">../assets/tiles_19.png</key>
+            <key type="filename">../assets/tiles_20.png</key>
+            <key type="filename">../assets/tiles_21.png</key>
+            <key type="filename">../assets/tiles_22.png</key>
+            <key type="filename">../assets/tiles_23.png</key>
+            <key type="filename">../assets/tiles_24.png</key>
+            <key type="filename">../assets/tiles_25.png</key>
+            <key type="filename">../assets/tiles_26.png</key>
+            <key type="filename">../assets/tiles_27.png</key>
+            <key type="filename">../assets/tiles_28.png</key>
+            <key type="filename">../assets/tiles_29.png</key>
+            <key type="filename">../assets/tiles_30.png</key>
+            <key type="filename">../assets/tiles_31.png</key>
+            <key type="filename">../assets/tiles_32.png</key>
+            <key type="filename">../assets/tiles_33.png</key>
             <struct type="IndividualSpriteSettings">
                 <key>pivotPoint</key>
                 <point_f>0.5,0.5</point_f>
@@ -222,6 +243,27 @@
             <filename>../assets/tiles_10.png</filename>
             <filename>../assets/tiles_11.png</filename>
             <filename>../assets/tiles_12.png</filename>
+            <filename>../assets/tiles_13.png</filename>
+            <filename>../assets/tiles_14.png</filename>
+            <filename>../assets/tiles_15.png</filename>
+            <filename>../assets/tiles_16.png</filename>
+            <filename>../assets/tiles_17.png</filename>
+            <filename>../assets/tiles_18.png</filename>
+            <filename>../assets/tiles_19.png</filename>
+            <filename>../assets/tiles_20.png</filename>
+            <filename>../assets/tiles_21.png</filename>
+            <filename>../assets/tiles_22.png</filename>
+            <filename>../assets/tiles_23.png</filename>
+            <filename>../assets/tiles_24.png</filename>
+            <filename>../assets/tiles_25.png</filename>
+            <filename>../assets/tiles_26.png</filename>
+            <filename>../assets/tiles_27.png</filename>
+            <filename>../assets/tiles_28.png</filename>
+            <filename>../assets/tiles_29.png</filename>
+            <filename>../assets/tiles_30.png</filename>
+            <filename>../assets/tiles_31.png</filename>
+            <filename>../assets/tiles_32.png</filename>
+            <filename>../assets/tiles_33.png</filename>
         </array>
         <key>ignoreFileList</key>
         <array/>
