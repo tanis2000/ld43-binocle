@@ -27,7 +27,7 @@
 #include "binocle_gd.h"
 #include "binocle_log.h"
 #include "binocle_math.h"
-#include "sys_config.h"
+//#include "sys_config.h"
 
 #define NK_INCLUDE_FIXED_TYPES
 #define NK_INCLUDE_DEFAULT_FONT
@@ -229,6 +229,7 @@ binocle_sound sfx_cd_3;
 binocle_sound sfx_cd_2;
 binocle_sound sfx_cd_1;
 struct countdown_voice_t voice_countdowns[MAX_COUNTDOWN_VOICE];
+char *binocle_data_dir = NULL;
 
 // Nuklear
 struct nk_context ctx;
@@ -594,7 +595,7 @@ void build_spawner(int index, float x, float y, item_kind_t item_kind) {
 
 void load_tilemap() {
   char filename[1024];
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "map.json");
+  sprintf(filename, "%s%s", binocle_data_dir, "map.json");
   char *json = NULL;
   size_t json_length = 0;
   if (!binocle_sdl_load_text_file(filename, &json, &json_length)) {
@@ -641,7 +642,7 @@ void load_tilemap() {
   }
 
   cute_tiled_free_map(map);
-  free(json);
+  //free(json);
 
 }
 
@@ -1377,11 +1378,11 @@ void main_loop() {
 
 void init_fonts() {
   char font_filename[1024];
-  sprintf(font_filename, "%s%s", BINOCLE_DATA_DIR, "minecraftia.fnt");
+  sprintf(font_filename, "%s%s", binocle_data_dir, "minecraftia.fnt");
   font = binocle_bitmapfont_from_file(font_filename, true);
 
   char font_image_filename[1024];
-  sprintf(font_image_filename, "%s%s", BINOCLE_DATA_DIR, "minecraftia.png");
+  sprintf(font_image_filename, "%s%s", binocle_data_dir, "minecraftia.png");
   font_image = binocle_image_load(font_image_filename);
   font_texture = binocle_texture_from_image(font_image);
   font_material = binocle_material_new();
@@ -1430,16 +1431,30 @@ int main(int argc, char *argv[]) {
   camera = binocle_camera_new(&adapter);
   // Init the input manager
   input = binocle_input_new();
+
+#if defined(__EMSCRIPTEN__)
+  binocle_data_dir = malloc(1024);
+  sprintf(binocle_data_dir, "/Users/tanis/Documents/ld43-binocle/assets/");
+#else
+  char *base_path = SDL_GetBasePath();
+  if (base_path) {
+    binocle_data_dir = base_path;
+  } else {
+    binocle_data_dir = SDL_strdup("./");
+  }
+#endif
+
+
   char filename[1024];
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "heli.png");
+  sprintf(filename, "%s%s", binocle_data_dir, "heli.png");
   binocle_log_info("Loading %s", filename);
   binocle_image image = binocle_image_load(filename);
   texture = binocle_texture_from_image(image);
   binocle_shader_init_defaults();
   char vert[1024];
-  sprintf(vert, "%s%s", BINOCLE_DATA_DIR, "default.vert");
+  sprintf(vert, "%s%s", binocle_data_dir, "default.vert");
   char frag[1024];
-  sprintf(frag, "%s%s", BINOCLE_DATA_DIR, "default.frag");
+  sprintf(frag, "%s%s", binocle_data_dir, "default.frag");
   default_shader = binocle_shader_load_from_file(vert, frag);
   binocle_material material = binocle_material_new();
   material.texture = &texture;
@@ -1454,17 +1469,17 @@ int main(int argc, char *argv[]) {
   player.speed.y = 0;
 
   // Load the default quad shader
-  sprintf(vert, "%s%s", BINOCLE_DATA_DIR, "screen.vert");
-  sprintf(frag, "%s%s", BINOCLE_DATA_DIR, "screen.frag");
+  sprintf(vert, "%s%s", binocle_data_dir, "screen.vert");
+  sprintf(frag, "%s%s", binocle_data_dir, "screen.frag");
   quad_shader = binocle_shader_load_from_file(vert, frag);
 
   // Load the UI shader
-  sprintf(vert, "%s%s", BINOCLE_DATA_DIR, "default.vert");
-  sprintf(frag, "%s%s", BINOCLE_DATA_DIR, "default.frag");
+  sprintf(vert, "%s%s", binocle_data_dir, "default.vert");
+  sprintf(frag, "%s%s", binocle_data_dir, "default.frag");
   ui_shader = binocle_shader_load_from_file(vert, frag);
 
 
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "testlibgdx.png");
+  sprintf(filename, "%s%s", binocle_data_dir, "testlibgdx.png");
   binocle_image player_image = binocle_image_load(filename);
   player_texture = binocle_texture_from_image(player_image);
   binocle_material player_material = binocle_material_new();
@@ -1498,10 +1513,10 @@ int main(int argc, char *argv[]) {
   binocle_sprite_play(&enemy, 0, true);
 
   // Load the sprite atlas with all the entities
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "entities.png");
+  sprintf(filename, "%s%s", binocle_data_dir, "entities.png");
   binocle_image atlas_image = binocle_image_load(filename);
   atlas_texture = binocle_texture_from_image(atlas_image);
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "entities.json");
+  sprintf(filename, "%s%s", binocle_data_dir, "entities.json");
   binocle_atlas_load_texturepacker(filename, &atlas_texture, atlas_subtextures, &atlas_subtextures_num);
 
   // Create the material for items
@@ -1590,7 +1605,7 @@ int main(int argc, char *argv[]) {
   
   
   // Create the tileset
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "tiles.png");
+  sprintf(filename, "%s%s", binocle_data_dir, "tiles.png");
   binocle_image tiles_image = binocle_image_load(filename);
   tiles_texture = binocle_texture_from_image(tiles_image);
   binocle_material tileset_material = binocle_material_new();
@@ -1649,77 +1664,77 @@ int main(int argc, char *argv[]) {
   // Audio has some issues with emscripten at the moment
 //#if !defined __EMSCRIPTEN__
   audio = binocle_audio_new();
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "maintheme.ogg");
+  sprintf(filename, "%s%s", binocle_data_dir, "maintheme.ogg");
   music = binocle_audio_load_music(&audio, filename);
   binocle_audio_play_music(&audio, music, true);
   binocle_audio_set_music_volume(64);
 
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "santa_jump.ogg");
+  sprintf(filename, "%s%s", binocle_data_dir, "santa_jump.ogg");
   sfx_santa_jump = binocle_sound_new();
   if (!binocle_audio_load_sound(&audio, filename, &sfx_santa_jump)) {
     binocle_log_error("Error loading sound %s", filename);
   }
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "santa_freeze.ogg");
+  sprintf(filename, "%s%s", binocle_data_dir, "santa_freeze.ogg");
   sfx_santa_freeze = binocle_sound_new();
   if (!binocle_audio_load_sound(&audio, filename, &sfx_santa_freeze)) {
     binocle_log_error("Error loading sound %s", filename);
   }
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "santa_pickup.ogg");
+  sprintf(filename, "%s%s", binocle_data_dir, "santa_pickup.ogg");
   sfx_santa_pickup = binocle_sound_new();
   if (!binocle_audio_load_sound(&audio, filename, &sfx_santa_pickup)) {
     binocle_log_error("Error loading sound %s", filename);
   }
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "witch_laugh.ogg");
+  sprintf(filename, "%s%s", binocle_data_dir, "witch_laugh.ogg");
   sfx_witch_laugh = binocle_sound_new();
   if (!binocle_audio_load_sound(&audio, filename, &sfx_witch_laugh)) {
     binocle_log_error("Error loading sound %s", filename);
   }
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "elf_freeze.ogg");
+  sprintf(filename, "%s%s", binocle_data_dir, "elf_freeze.ogg");
   sfx_elf_freeze = binocle_sound_new();
   if (!binocle_audio_load_sound(&audio, filename, &sfx_elf_freeze)) {
     binocle_log_error("Error loading sound %s", filename);
   }
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "elf_pickup.ogg");
+  sprintf(filename, "%s%s", binocle_data_dir, "elf_pickup.ogg");
   sfx_elf_pickup = binocle_sound_new();
   if (!binocle_audio_load_sound(&audio, filename, &sfx_elf_pickup)) {
     binocle_log_error("Error loading sound %s", filename);
   }
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "elf_throw.ogg");
+  sprintf(filename, "%s%s", binocle_data_dir, "elf_throw.ogg");
   sfx_elf_throw = binocle_sound_new();
   if (!binocle_audio_load_sound(&audio, filename, &sfx_elf_throw)) {
     binocle_log_error("Error loading sound %s", filename);
   }
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "go.ogg");
+  sprintf(filename, "%s%s", binocle_data_dir, "go.ogg");
   sfx_go = binocle_sound_new();
   if (!binocle_audio_load_sound(&audio, filename, &sfx_go)) {
     binocle_log_error("Error loading sound %s", filename);
   }
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "you_win.ogg");
+  sprintf(filename, "%s%s", binocle_data_dir, "you_win.ogg");
   sfx_level_completed = binocle_sound_new();
   if (!binocle_audio_load_sound(&audio, filename, &sfx_level_completed)) {
     binocle_log_error("Error loading sound %s", filename);
   }
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "cd_5.ogg");
+  sprintf(filename, "%s%s", binocle_data_dir, "cd_5.ogg");
   sfx_cd_5 = binocle_sound_new();
   if (!binocle_audio_load_sound(&audio, filename, &sfx_cd_5)) {
     binocle_log_error("Error loading sound %s", filename);
   }
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "cd_4.ogg");
+  sprintf(filename, "%s%s", binocle_data_dir, "cd_4.ogg");
   sfx_cd_4 = binocle_sound_new();
   if (!binocle_audio_load_sound(&audio, filename, &sfx_cd_4)) {
     binocle_log_error("Error loading sound %s", filename);
   }
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "cd_3.ogg");
+  sprintf(filename, "%s%s", binocle_data_dir, "cd_3.ogg");
   sfx_cd_3 = binocle_sound_new();
   if (!binocle_audio_load_sound(&audio, filename, &sfx_cd_3)) {
     binocle_log_error("Error loading sound %s", filename);
   }
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "cd_2.ogg");
+  sprintf(filename, "%s%s", binocle_data_dir, "cd_2.ogg");
   sfx_cd_2 = binocle_sound_new();
   if (!binocle_audio_load_sound(&audio, filename, &sfx_cd_2)) {
     binocle_log_error("Error loading sound %s", filename);
   }
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "cd_1.ogg");
+  sprintf(filename, "%s%s", binocle_data_dir, "cd_1.ogg");
   sfx_cd_1 = binocle_sound_new();
   if (!binocle_audio_load_sound(&audio, filename, &sfx_cd_1)) {
     binocle_log_error("Error loading sound %s", filename);
