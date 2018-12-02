@@ -54,7 +54,8 @@
 typedef enum game_state_t {
   GAME_STATE_MENU,
   GAME_STATE_RUN,
-  GAME_STATE_GAMEOVER
+  GAME_STATE_GAMEOVER,
+  GAME_STATE_WITCH
 } game_state_t;
 
 typedef enum item_kind_t {
@@ -108,6 +109,15 @@ struct spawner_t {
   struct entity_t entity; // Used for physical rendering
   float cooldown;
   float cooldown_original;
+};
+
+struct witch_t {
+  struct entity_t entity;
+  float floating_duration;
+  float floating_cooldown;
+  float sacrifice_duration;
+  float sacrifice_cooldown;
+  bool sacrifice_done;
 };
 
 // Window stuff
@@ -173,6 +183,12 @@ struct entity_t elves[MAX_ELVES];
 struct spawner_t spawners[MAX_SPAWNERS];
 int score = 0;
 binocle_material item_material;
+float witch_countdown;
+float witch_countdown_original = 5;
+float packages_left;
+float packages_left_original = 10;
+binocle_material witch_material;
+struct witch_t witch;
 
 // Nuklear
 struct nk_context ctx;
@@ -249,13 +265,15 @@ void draw_gui() {
       /* fixed widget pixel width */
       //nk_layout_row_static(&ctx, 30, 80, 1);
       nk_layout_row_dynamic(&ctx, 30, 1);
-      nk_label(&ctx, "Santa", NK_TEXT_CENTERED);
+      nk_label(&ctx, "Santa frowns to town", NK_TEXT_CENTERED);
       if (nk_button_label(&ctx, "Start")) {
         player.dead = false;
         scroller_x = 0.0f;
         player.pos.x = roundf(design_width / 3.0f);
         player.pos.y = roundf(design_height / 2.0f);
         player.speed.y = 0;
+        witch_countdown = witch_countdown_original;
+        packages_left = packages_left_original;
         game_state = GAME_STATE_RUN;
       }
       if (nk_button_label(&ctx, "Quit")) {
@@ -286,7 +304,9 @@ void draw_gui() {
     if (nk_begin(&ctx, "Game Over", nk_rect(20, 50, design_width - 40, design_height - 100),
                  NK_WINDOW_BORDER)) {
       nk_layout_row_dynamic(&ctx, 30, 1);
-      nk_label(&ctx, "Your score:", NK_TEXT_CENTERED);
+      char sc[100];
+      sprintf(sc, "Your score: %d", score);
+      nk_label(&ctx, sc, NK_TEXT_CENTERED);
       if (nk_button_label(&ctx, "Continue")) {
         game_state = GAME_STATE_MENU;
       }
@@ -578,6 +598,26 @@ bool spawn_item(struct entity_t *entity, item_kind_t item_kind) {
   return true;
 }
 
+bool spawn_witch(struct entity_t *entity) {
+  entity->rot = 0;
+  entity->sprite = binocle_sprite_from_material(&witch_material);
+  entity->sprite.subtexture = atlas_subtextures[0];
+  entity->sprite.origin.x = 0.5f * entity->sprite.subtexture.rect.max.x;
+  entity->sprite.origin.y = 0.5f * entity->sprite.subtexture.rect.max.y;
+  entity->dx = 0;
+  entity->dy = 0;
+  entity->xr = 0.5;
+  entity->yr = 1.0;
+  entity->cx = 0;
+  entity->cy = 0;
+  entity->frict = 0.8;
+  entity->has_gravity = false;
+  entity->dir = -1;
+  entity->scale.x = 1;
+  entity->scale.y = 1;
+  return true;
+}
+
 void entity_set_position(struct entity_t *entity, float x, float y) {
   entity->pos.x = x;
   entity->pos.y = y;
@@ -585,6 +625,15 @@ void entity_set_position(struct entity_t *entity, float x, float y) {
   entity->cy = (int)(y/GRID);
   entity->xr = (entity->pos.x - entity->cx * GRID) / GRID;
   entity->yr = (entity->pos.y - entity->cy * GRID) / GRID;
+}
+
+void entity_set_grid_position(struct entity_t *entity, int cx, int cy) {
+  entity->cx = cx;
+  entity->cy = cy;
+  entity->xr = 0.5f;
+  entity->yr = 1.0f;
+  entity->pos.x = (int64_t)((entity->cx + entity->xr) * GRID);
+  entity->pos.y = (int64_t)((entity->cy + entity->yr) * GRID);
 }
 
 void entity_update(struct entity_t *e) {
@@ -696,9 +745,53 @@ void elves_update() {
         free(elves[i].carried_entity);
         elves[i].carried_entity = NULL;
         score += 1;
+        packages_left -= 1;
       }
     }
   }
+}
+
+void kill_elf(struct entity_t *elf) {
+  elf->dead = true;
+}
+
+void witch_update() {
+  if (witch.floating_cooldown > 0) {
+    witch.floating_cooldown -= (binocle_window_get_frame_time(&window) / 1000.0);
+    return;
+  }
+
+  if (!witch.sacrifice_done) {
+    // Sacrifice the elf
+    for (int i = 0 ; i < MAX_ELVES ; i++) {
+      if (!elves[i].dead) {
+        kill_elf(&elves[i]);
+        break;
+      }
+    }
+    witch.sacrifice_done = true;
+  }
+
+  if (witch.sacrifice_cooldown > 0) {
+    witch.sacrifice_cooldown -= (binocle_window_get_frame_time(&window) / 1000.0);
+    return;
+  }
+
+  int elves_alive = 0;
+  for (int i = 0 ; i < MAX_ELVES ; i++) {
+    if (!elves[i].dead) {
+      elves_alive++;
+    }
+  }
+
+  if (elves_alive == 0) {
+    game_state = GAME_STATE_GAMEOVER;
+    return;
+  }
+
+  // Back to game with one elf less
+  witch_countdown = witch_countdown_original;
+  game_state = GAME_STATE_RUN;
 }
 
 void game_update() {
@@ -726,59 +819,69 @@ void game_update() {
 
   float speed = 0.72;
 
-  if (binocle_input_is_key_pressed(input, KEY_RIGHT)) {
-    hero.dx += speed * (1.0f / window.frame_time);
-    hero.dir = 1;
-  } else if (binocle_input_is_key_pressed(input, KEY_LEFT)) {
-    hero.dx -= speed * (1.0f / window.frame_time);
-    hero.dir = -1;
-  }
-
-  if (binocle_input_is_key_pressed(input, KEY_UP)) {
-    if (hero.on_ground) {
-      hero.dy = 10.0f * (1.0f / window.frame_time);
-      hero.dx *= 1.2f;
-      //binocle_audio_play_sound(&audio, jump_sound);
+  if (game_state == GAME_STATE_WITCH) {
+    // Ignore player input while displaying the witch
+    witch_update();
+    entity_update(&witch.entity);
+    if (game_state == GAME_STATE_GAMEOVER || game_state == GAME_STATE_RUN) {
+      return;
     }
-  } else if (binocle_input_is_key_pressed(input, KEY_DOWN)) {
-  }
+  } else {
+    if (binocle_input_is_key_pressed(input, KEY_RIGHT)) {
+      hero.dx += speed * (1.0f / window.frame_time);
+      hero.dir = 1;
+    } else if (binocle_input_is_key_pressed(input, KEY_LEFT)) {
+      hero.dx -= speed * (1.0f / window.frame_time);
+      hero.dir = -1;
+    }
 
-  if (binocle_input_is_key_pressed(input, KEY_SPACE)) {
-    // Interaction with spawners
-    for (int i = 0 ; i < MAX_SPAWNERS ; i++) {
-      if (hero.cx == spawners[i].entity.cx
-      && hero.cy == spawners[i].entity.cy) {
-        if (hero.carried_item_kind == ITEM_KIND_NONE && spawners[i].item_kind == ITEM_KIND_TOY) {
-          hero.carried_item_kind = ITEM_KIND_TOY;
-          hero.carried_entity = malloc(sizeof(struct entity_t));
-          spawn_item(hero.carried_entity, ITEM_KIND_TOY);
-        } else if (hero.carried_item_kind == ITEM_KIND_TOY && spawners[i].item_kind == ITEM_KIND_PACKAGE) {
-          hero.carried_item_kind = ITEM_KIND_PACKAGE;
-          free(hero.carried_entity);
-          hero.carried_entity = malloc(sizeof(struct entity_t));
-          spawn_item(hero.carried_entity, ITEM_KIND_PACKAGE);
-        } else if (hero.carried_item_kind == ITEM_KIND_PACKAGE && spawners[i].item_kind == ITEM_KIND_WRAP) {
-          hero.carried_item_kind = ITEM_KIND_WRAP;
-          free(hero.carried_entity);
-          hero.carried_entity = malloc(sizeof(struct entity_t));
-          spawn_item(hero.carried_entity, ITEM_KIND_WRAP);
+    if (binocle_input_is_key_pressed(input, KEY_UP)) {
+      if (hero.on_ground) {
+        hero.dy = 10.0f * (1.0f / window.frame_time);
+        hero.dx *= 1.2f;
+        //binocle_audio_play_sound(&audio, jump_sound);
+      }
+    } else if (binocle_input_is_key_pressed(input, KEY_DOWN)) {
+    }
+
+    if (binocle_input_is_key_pressed(input, KEY_SPACE)) {
+      // Interaction with spawners
+      for (int i = 0 ; i < MAX_SPAWNERS ; i++) {
+        if (hero.cx == spawners[i].entity.cx
+            && hero.cy == spawners[i].entity.cy) {
+          if (hero.carried_item_kind == ITEM_KIND_NONE && spawners[i].item_kind == ITEM_KIND_TOY) {
+            hero.carried_item_kind = ITEM_KIND_TOY;
+            hero.carried_entity = malloc(sizeof(struct entity_t));
+            spawn_item(hero.carried_entity, ITEM_KIND_TOY);
+          } else if (hero.carried_item_kind == ITEM_KIND_TOY && spawners[i].item_kind == ITEM_KIND_PACKAGE) {
+            hero.carried_item_kind = ITEM_KIND_PACKAGE;
+            free(hero.carried_entity);
+            hero.carried_entity = malloc(sizeof(struct entity_t));
+            spawn_item(hero.carried_entity, ITEM_KIND_PACKAGE);
+          } else if (hero.carried_item_kind == ITEM_KIND_PACKAGE && spawners[i].item_kind == ITEM_KIND_WRAP) {
+            hero.carried_item_kind = ITEM_KIND_WRAP;
+            free(hero.carried_entity);
+            hero.carried_entity = malloc(sizeof(struct entity_t));
+            spawn_item(hero.carried_entity, ITEM_KIND_WRAP);
+          }
+        }
+      }
+
+      // Interaction with elves
+      for (int i = 0 ; i < MAX_ELVES ; i++) {
+        if (hero.cx == elves[i].cx
+            && hero.cy == elves[i].cy) {
+          if (hero.carried_item_kind == ITEM_KIND_WRAP && elves[i].carried_item_kind == ITEM_KIND_NONE) {
+            elves[i].carried_item_kind = ITEM_KIND_WRAP;
+            elves[i].carried_entity = hero.carried_entity;
+            hero.carried_item_kind = ITEM_KIND_NONE;
+            hero.carried_entity = NULL;
+          }
         }
       }
     }
-
-    // Interaction with elves
-    for (int i = 0 ; i < MAX_ELVES ; i++) {
-      if (hero.cx == elves[i].cx
-          && hero.cy == elves[i].cy) {
-        if (hero.carried_item_kind == ITEM_KIND_WRAP && elves[i].carried_item_kind == ITEM_KIND_NONE) {
-          elves[i].carried_item_kind = ITEM_KIND_WRAP;
-          elves[i].carried_entity = hero.carried_entity;
-          hero.carried_item_kind = ITEM_KIND_NONE;
-          hero.carried_entity = NULL;
-        }
-      }
-    }
   }
+
 
   elves_update();
 
@@ -815,6 +918,21 @@ void game_update() {
     scroller_x += 20.0f * dt;
 
   }
+
+  if (game_state != GAME_STATE_WITCH) {
+    witch_countdown -= (binocle_window_get_frame_time(&window) / 1000.0);
+
+    if (witch_countdown < 0) {
+      witch_countdown = 0;
+      spawn_witch(&witch.entity);
+      entity_set_grid_position(&witch.entity, 18, 6);
+      witch.floating_cooldown = 5;
+      witch.sacrifice_cooldown = 5;
+      witch.sacrifice_done = false;
+      game_state = GAME_STATE_WITCH;
+    }
+  }
+
 }
 
 void game_render() {
@@ -889,6 +1007,12 @@ void game_render() {
     }
   }
 
+  // Witch
+  if (game_state == GAME_STATE_WITCH) {
+    binocle_sprite_draw(witch.entity.sprite, &gd, (int64_t)witch.entity.pos.x, (int64_t)witch.entity.pos.y,
+                        vp_design, 0, witch.entity.scale);
+  }
+
   // Santa
 
   binocle_sprite_draw(hero.sprite, &gd, (int64_t)hero.pos.x, (int64_t)hero.pos.y,
@@ -921,6 +1045,7 @@ void main_loop() {
       show_menu = true;
       break;
     case GAME_STATE_RUN:
+    case GAME_STATE_WITCH:
       game_update();
       break;
     case GAME_STATE_GAMEOVER:
@@ -950,13 +1075,13 @@ void main_loop() {
   // binocle_camera_get_transform_matrix(&camera));
   //binocle_gd_draw_rect(&gd, testRect, binocle_color_white(), vp_design, identity_mat);
 
-  if (game_state == GAME_STATE_RUN) {
+  if (game_state == GAME_STATE_RUN || game_state == GAME_STATE_WITCH) {
     game_render();
   }
 
 
   // GUI
-  if (game_state == GAME_STATE_MENU) {
+  if (game_state == GAME_STATE_MENU || game_state == GAME_STATE_GAMEOVER) {
     draw_gui();
   } else {
     draw_debug_gui();
@@ -967,8 +1092,8 @@ void main_loop() {
   // binocle_bitmapfont_draw_string(font, "SCORE: 0", 32, &gd, 10,
   // window.height-36, binocle_camera_get_viewport(camera),
   // binocle_color_black(), binocle_camera_get_transform_matrix(&camera));
-  char score_string[50];
-  sprintf(score_string, "SCORE: %d", score);
+  char score_string[100];
+  sprintf(score_string, "SCORE: %d   TIME LEFT: %2.0f   PACKAGES LEFT: %d", score, witch_countdown, packages_left);
   binocle_bitmapfont_draw_string(font, score_string, 32, &gd, 10,
                                  design_height - 36, vp_design,
                                  binocle_color_white(), identity_mat);
@@ -1069,7 +1194,7 @@ int main(int argc, char *argv[]) {
   // Init SDL
   binocle_sdl_init();
   // Create the window
-  window = binocle_window_new(design_width, design_height, "Santa");
+  window = binocle_window_new(design_width, design_height, "Santa frowns to town");
   binocle_window_set_minimum_size(&window, design_width, design_height);
   // Updates the window size in case we're on mobile and getting a forced
   // dimension
@@ -1172,6 +1297,11 @@ int main(int argc, char *argv[]) {
   item_material = binocle_material_new();
   item_material.texture = &atlas_texture;
   item_material.shader = &default_shader;
+
+  // Create the material for the witch
+  witch_material = binocle_material_new();
+  witch_material.texture = &atlas_texture;
+  witch_material.shader = &default_shader;
 
   // Create the player
   binocle_material hero_material = binocle_material_new();
