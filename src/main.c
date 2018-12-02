@@ -45,6 +45,9 @@
 #define GRID 32
 #define MAX_ELVES 4
 #define MAX_SPAWNERS 3
+#define MAX_PARTICLES 256
+#define WITCH_COOLDOWN 60
+#define MAX_COUNTDOWN_VOICE 5
 
 #if defined(WIN32)
 #define drand48() (rand() / (RAND_MAX + 1.0))
@@ -75,6 +78,7 @@ struct player_t {
 
 struct entity_t {
   binocle_sprite sprite;
+  binocle_sprite frozen_sprite;
   kmVec2 pos;
   float rot;
   kmVec2 scale;
@@ -118,6 +122,22 @@ struct witch_t {
   float sacrifice_duration;
   float sacrifice_cooldown;
   bool sacrifice_done;
+};
+
+struct particle_t {
+  binocle_sprite *sprite;
+  kmVec2 pos;
+  kmVec2 speed;
+  bool alive;
+  float cooldown;
+  kmVec2 scale;
+};
+
+struct countdown_voice_t {
+  binocle_sound *sound;
+  float cooldown_original;
+  float cooldown;
+  bool enabled;
 };
 
 // Window stuff
@@ -184,11 +204,31 @@ struct spawner_t spawners[MAX_SPAWNERS];
 int score = 0;
 binocle_material item_material;
 float witch_countdown;
-float witch_countdown_original = 5;
-float packages_left;
-float packages_left_original = 10;
+float witch_countdown_original = WITCH_COOLDOWN;
+int packages_left;
+int packages_left_original = 10;
 binocle_material witch_material;
 struct witch_t witch;
+bool debug_enabled = false;
+struct particle_t particles[MAX_PARTICLES];
+binocle_sprite star_sprite;
+binocle_sprite cloud_sprite;
+binocle_sprite box_sprite;
+binocle_sound sfx_santa_jump;
+binocle_sound sfx_santa_freeze;
+binocle_sound sfx_santa_pickup;
+binocle_sound sfx_witch_laugh;
+binocle_sound sfx_elf_freeze;
+binocle_sound sfx_elf_pickup;
+binocle_sound sfx_elf_throw;
+binocle_sound sfx_go;
+binocle_sound sfx_level_completed;
+binocle_sound sfx_cd_5;
+binocle_sound sfx_cd_4;
+binocle_sound sfx_cd_3;
+binocle_sound sfx_cd_2;
+binocle_sound sfx_cd_1;
+struct countdown_voice_t voice_countdowns[MAX_COUNTDOWN_VOICE];
 
 // Nuklear
 struct nk_context ctx;
@@ -196,8 +236,40 @@ struct nk_draw_null_texture nuklear_null;
 
 int random_int(int min, int max)
 {
-  return (min + random() % (max+1 - min));
+  return (min + rand() % (max+1 - min));
 }
+
+float random_float(float min, float max) {
+    return ((((float) rand()) / (float) RAND_MAX) * (max - min)) + min;
+}
+
+void reset_voice_countdowns(float witch_timer) {
+  voice_countdowns[0].enabled = true;
+  voice_countdowns[0].sound = &sfx_cd_5;
+  voice_countdowns[0].cooldown_original = witch_timer - 5;
+  voice_countdowns[0].cooldown = voice_countdowns[0].cooldown_original;
+
+  voice_countdowns[1].enabled = true;
+  voice_countdowns[1].sound = &sfx_cd_4;
+  voice_countdowns[1].cooldown_original = witch_timer - 4;
+  voice_countdowns[1].cooldown = voice_countdowns[1].cooldown_original;
+
+  voice_countdowns[2].enabled = true;
+  voice_countdowns[2].sound = &sfx_cd_3;
+  voice_countdowns[2].cooldown_original = witch_timer - 3;
+  voice_countdowns[2].cooldown = voice_countdowns[2].cooldown_original;
+
+  voice_countdowns[3].enabled = true;
+  voice_countdowns[3].sound = &sfx_cd_2;
+  voice_countdowns[3].cooldown_original = witch_timer - 2;
+  voice_countdowns[3].cooldown = voice_countdowns[3].cooldown_original;
+
+  voice_countdowns[4].enabled = true;
+  voice_countdowns[4].sound = &sfx_cd_1;
+  voice_countdowns[4].cooldown_original = witch_timer - 1;
+  voice_countdowns[4].cooldown = voice_countdowns[4].cooldown_original;
+}
+
 
 void build_scaling_viewport(int window_width, int window_height,
                             int design_width, int design_height,
@@ -266,14 +338,35 @@ void draw_gui() {
       //nk_layout_row_static(&ctx, 30, 80, 1);
       nk_layout_row_dynamic(&ctx, 30, 1);
       nk_label(&ctx, "Santa frowns to town", NK_TEXT_CENTERED);
+      char t1[2048];
+      strcpy(t1, "Santa has been kidnapped and kept away in a tower by the evil witch of Halloween. She's jealous of Santa and wants to take all the gifts to children herself.");
+      nk_text_wrap(&ctx, t1, strlen(t1));
+      char t2[2048];
+      strcpy(t2, "But she still needs Santa to get them ready. It's your mission, as Santa, to get the toys, put them in the packages and wrap them up and deliver to the elves");
+      nk_text_wrap(&ctx, t2, strlen(t2));
+      char t3[2048];
+      strcpy(t3, "who will take care of filling the sled. You have to wrap up enough gifts or the witch will come and sacrifice an Christmas elf to punish you!");
+      nk_text_wrap(&ctx, t3, strlen(t3));
+      char t4[2048];
+      strcpy(t4, "Use the arrow keys to move, UP to jump and SPACE to interact with the toys, boxes, wraps and elves. Pick up the toy, bring it to the box and put it in there.");
+      nk_text_wrap(&ctx, t4, strlen(t4));
+      char t5[2048];
+      strcpy(t5, "Then wrap up the box and bring it to an elf. The elf will take care of delivering it to the sled. Hurry up!");
+      nk_text_wrap(&ctx, t5, strlen(t5));
       if (nk_button_label(&ctx, "Start")) {
         player.dead = false;
         scroller_x = 0.0f;
         player.pos.x = roundf(design_width / 3.0f);
         player.pos.y = roundf(design_height / 2.0f);
         player.speed.y = 0;
+        witch_countdown_original = WITCH_COOLDOWN;
         witch_countdown = witch_countdown_original;
         packages_left = packages_left_original;
+        score = 0;
+        for (int i = 0 ; i < MAX_ELVES ; i++) {
+          elves[i].dead = false;
+        }
+        reset_voice_countdowns(witch_countdown);
         game_state = GAME_STATE_RUN;
       }
       if (nk_button_label(&ctx, "Quit")) {
@@ -552,6 +645,59 @@ void load_tilemap() {
 
 }
 
+void spawn_particle(binocle_sprite *sprite, float x, float y, float cooldown, int num) {
+  for (int i = 0 ; i < MAX_PARTICLES ; i++) {
+    if (!particles[i].alive) {
+      particles[i].alive = true;
+      particles[i].sprite = sprite;
+      particles[i].pos.x = x;
+      particles[i].pos.y = y;
+      particles[i].speed.x = random_float(-100, 100);
+      particles[i].speed.y = random_float(-100, 100);
+      particles[i].cooldown = cooldown;
+      particles[i].scale.x = 1;
+      particles[i].scale.y = 1;
+      num--;
+      if (num == 0) {
+        break;
+      }
+    }
+  }
+}
+
+void spawn_particle_with_target(binocle_sprite *sprite, float x, float y, float target_x, float target_y, float cooldown) {
+  for (int i = 0 ; i < MAX_PARTICLES ; i++) {
+    if (!particles[i].alive) {
+      particles[i].alive = true;
+      particles[i].sprite = sprite;
+      particles[i].pos.x = x;
+      particles[i].pos.y = y;
+      particles[i].speed.x = (target_x - x)/cooldown;
+      particles[i].speed.y = (target_y - y)/cooldown;
+      particles[i].cooldown = cooldown;
+      particles[i].scale.x = 1;
+      particles[i].scale.y = 1;
+      break;
+    }
+  }
+}
+
+void update_particles() {
+  for (int i = 0 ; i < MAX_PARTICLES ; i++) {
+    if (particles[i].alive) {
+      if (particles[i].cooldown < 0) {
+        particles[i].alive = false;
+        continue;
+      }
+
+      particles[i].pos.x += particles[i].speed.x * (binocle_window_get_frame_time(&window) / 1000.0f);
+      particles[i].pos.y += particles[i].speed.y * (binocle_window_get_frame_time(&window) / 1000.0f);
+
+      particles[i].cooldown -= (binocle_window_get_frame_time(&window) / 1000.0f);
+    }
+  }
+}
+
 bool level_has_any_collision(int cx, int cy) {
   if (cx < 0 || cy < 0) {
     return false;
@@ -601,7 +747,7 @@ bool spawn_item(struct entity_t *entity, item_kind_t item_kind) {
 bool spawn_witch(struct entity_t *entity) {
   entity->rot = 0;
   entity->sprite = binocle_sprite_from_material(&witch_material);
-  entity->sprite.subtexture = atlas_subtextures[0];
+  entity->sprite.subtexture = atlas_subtextures[13];
   entity->sprite.origin.x = 0.5f * entity->sprite.subtexture.rect.max.x;
   entity->sprite.origin.y = 0.5f * entity->sprite.subtexture.rect.max.y;
   entity->dx = 0;
@@ -744,8 +890,13 @@ void elves_update() {
         elves[i].carried_item_kind = ITEM_KIND_NONE;
         free(elves[i].carried_entity);
         elves[i].carried_entity = NULL;
+        spawn_particle_with_target(&box_sprite, elves[i].pos.x, elves[i].pos.y, 20 * GRID, 5 * GRID, 0.5f);
+        binocle_audio_play_sound(&audio, &sfx_elf_throw);
         score += 1;
         packages_left -= 1;
+        if (packages_left < 0) {
+          packages_left = 0;
+        }
       }
     }
   }
@@ -753,6 +904,8 @@ void elves_update() {
 
 void kill_elf(struct entity_t *elf) {
   elf->dead = true;
+  spawn_particle(&cloud_sprite, elf->pos.x, elf->pos.y, 1, 5);
+  binocle_audio_play_sound(&audio, &sfx_elf_freeze);
 }
 
 void witch_update() {
@@ -791,6 +944,7 @@ void witch_update() {
 
   // Back to game with one elf less
   witch_countdown = witch_countdown_original;
+  binocle_audio_play_sound(&audio, &sfx_go);
   game_state = GAME_STATE_RUN;
 }
 
@@ -839,7 +993,7 @@ void game_update() {
       if (hero.on_ground) {
         hero.dy = 10.0f * (1.0f / window.frame_time);
         hero.dx *= 1.2f;
-        //binocle_audio_play_sound(&audio, jump_sound);
+        binocle_audio_play_sound(&audio, &sfx_santa_jump);
       }
     } else if (binocle_input_is_key_pressed(input, KEY_DOWN)) {
     }
@@ -853,16 +1007,19 @@ void game_update() {
             hero.carried_item_kind = ITEM_KIND_TOY;
             hero.carried_entity = malloc(sizeof(struct entity_t));
             spawn_item(hero.carried_entity, ITEM_KIND_TOY);
+            binocle_audio_play_sound(&audio, &sfx_santa_pickup);
           } else if (hero.carried_item_kind == ITEM_KIND_TOY && spawners[i].item_kind == ITEM_KIND_PACKAGE) {
             hero.carried_item_kind = ITEM_KIND_PACKAGE;
             free(hero.carried_entity);
             hero.carried_entity = malloc(sizeof(struct entity_t));
             spawn_item(hero.carried_entity, ITEM_KIND_PACKAGE);
+            binocle_audio_play_sound(&audio, &sfx_santa_pickup);
           } else if (hero.carried_item_kind == ITEM_KIND_PACKAGE && spawners[i].item_kind == ITEM_KIND_WRAP) {
             hero.carried_item_kind = ITEM_KIND_WRAP;
             free(hero.carried_entity);
             hero.carried_entity = malloc(sizeof(struct entity_t));
             spawn_item(hero.carried_entity, ITEM_KIND_WRAP);
+            binocle_audio_play_sound(&audio, &sfx_santa_pickup);
           }
         }
       }
@@ -871,11 +1028,12 @@ void game_update() {
       for (int i = 0 ; i < MAX_ELVES ; i++) {
         if (hero.cx == elves[i].cx
             && hero.cy == elves[i].cy) {
-          if (hero.carried_item_kind == ITEM_KIND_WRAP && elves[i].carried_item_kind == ITEM_KIND_NONE) {
+          if (hero.carried_item_kind == ITEM_KIND_WRAP && !elves[i].dead && elves[i].carried_item_kind == ITEM_KIND_NONE) {
             elves[i].carried_item_kind = ITEM_KIND_WRAP;
             elves[i].carried_entity = hero.carried_entity;
             hero.carried_item_kind = ITEM_KIND_NONE;
             hero.carried_entity = NULL;
+            binocle_audio_play_sound(&audio, &sfx_elf_pickup);
           }
         }
       }
@@ -884,6 +1042,8 @@ void game_update() {
 
 
   elves_update();
+
+  update_particles();
 
   if (window.frame_time > 0) {
     float dt = 1.0f / window.frame_time;
@@ -919,17 +1079,38 @@ void game_update() {
 
   }
 
+  for (int i = 0 ; i < MAX_COUNTDOWN_VOICE ; i++) {
+    if (voice_countdowns[i].enabled && voice_countdowns[i].cooldown < 0) {
+      binocle_audio_play_sound(&audio, voice_countdowns[i].sound);
+      voice_countdowns[i].enabled = false;
+      continue;
+    }
+    voice_countdowns[i].cooldown -= (binocle_window_get_frame_time(&window) / 1000.0);
+  }
+
   if (game_state != GAME_STATE_WITCH) {
     witch_countdown -= (binocle_window_get_frame_time(&window) / 1000.0);
 
     if (witch_countdown < 0) {
-      witch_countdown = 0;
-      spawn_witch(&witch.entity);
-      entity_set_grid_position(&witch.entity, 18, 6);
-      witch.floating_cooldown = 5;
-      witch.sacrifice_cooldown = 5;
-      witch.sacrifice_done = false;
-      game_state = GAME_STATE_WITCH;
+      if (packages_left > 0) {
+        witch_countdown = 0;
+        spawn_witch(&witch.entity);
+        entity_set_grid_position(&witch.entity, 19, 5);
+        witch.floating_cooldown = 5;
+        witch.sacrifice_cooldown = 5;
+        witch.sacrifice_done = false;
+        spawn_particle(&star_sprite, witch.entity.pos.x, witch.entity.pos.y, 2, 10);
+        binocle_audio_play_sound(&audio, &sfx_witch_laugh);
+        binocle_audio_play_sound(&audio, &sfx_santa_freeze);
+        game_state = GAME_STATE_WITCH;
+      } else {
+        packages_left = packages_left_original;
+        witch_countdown_original = witch_countdown_original * 0.9f;
+        witch_countdown = witch_countdown_original;
+        spawn_particle(&star_sprite, design_width / 2.0f, design_height / 2.0f, 5, 20);
+        binocle_audio_play_sound(&audio, &sfx_level_completed);
+        reset_voice_countdowns(witch_countdown);
+      }
     }
   }
 
@@ -999,11 +1180,16 @@ void game_render() {
 
   // Elves
   for (int i = 0 ; i < MAX_ELVES ; i++) {
-    binocle_sprite_draw(elves[i].sprite, &gd, (int64_t)elves[i].pos.x, (int64_t)elves[i].pos.y,
-                        vp_design, 0, elves[i].scale);
-    if (elves[i].carried_entity != NULL) {
-      binocle_sprite_draw(elves[i].carried_entity->sprite, &gd, (int64_t)elves[i].carried_entity->pos.x, (int64_t)elves[i].carried_entity->pos.y,
-                          vp_design, 0, elves[i].carried_entity->scale);
+    if (!elves[i].dead) {
+      binocle_sprite_draw(elves[i].sprite, &gd, (int64_t)elves[i].pos.x, (int64_t)elves[i].pos.y,
+                          vp_design, 0, elves[i].scale);
+      if (elves[i].carried_entity != NULL) {
+        binocle_sprite_draw(elves[i].carried_entity->sprite, &gd, (int64_t)elves[i].carried_entity->pos.x, (int64_t)elves[i].carried_entity->pos.y,
+                            vp_design, 0, elves[i].carried_entity->scale);
+      }
+    } else {
+      binocle_sprite_draw(elves[i].frozen_sprite, &gd, (int64_t)elves[i].pos.x, (int64_t)elves[i].pos.y,
+                          vp_design, 0, elves[i].scale);
     }
   }
 
@@ -1011,16 +1197,35 @@ void game_render() {
   if (game_state == GAME_STATE_WITCH) {
     binocle_sprite_draw(witch.entity.sprite, &gd, (int64_t)witch.entity.pos.x, (int64_t)witch.entity.pos.y,
                         vp_design, 0, witch.entity.scale);
+    char s[100];
+    sprintf(s, "You ran out of time! I'll sacrifice an elf!");
+    binocle_bitmapfont_draw_string(font, s, 24, &gd, witch.entity.pos.x - 12 * GRID,
+                                   witch.entity.pos.y, vp_design,
+                                   binocle_color_new(0.0f/255.0f, 166.0f/255.0f, 81.0f/255.0f, 1.0f), identity_mat);
+  }
+
+  // Particles
+  for (int i = 0 ; i < MAX_PARTICLES ; i++) {
+    if (particles[i].alive) {
+      binocle_sprite_draw(*particles[i].sprite, &gd, (int64_t)particles[i].pos.x, (int64_t)particles[i].pos.y,
+                          vp_design, 0, particles[i].scale);
+    }
   }
 
   // Santa
 
-  binocle_sprite_draw(hero.sprite, &gd, (int64_t)hero.pos.x, (int64_t)hero.pos.y,
-                      vp_design, 0, hero.scale);
+  if (game_state == GAME_STATE_WITCH) {
+    binocle_sprite_draw(hero.frozen_sprite, &gd, (int64_t)hero.pos.x, (int64_t)hero.pos.y,
+                        vp_design, 0, hero.scale);
+  } else {
+    binocle_sprite_draw(hero.sprite, &gd, (int64_t)hero.pos.x, (int64_t)hero.pos.y,
+                        vp_design, 0, hero.scale);
+  }
   if (hero.carried_entity != NULL) {
-    binocle_sprite_draw(hero.carried_entity->sprite, &gd, (int64_t)hero.carried_entity->pos.x, (int64_t)hero.carried_entity->pos.y,
+    binocle_sprite_draw(hero.carried_entity->sprite, &gd, (int64_t)hero.carried_entity->pos.x, (int64_t)hero.carried_entity->pos.y + 32,
                         vp_design, 0, hero.carried_entity->scale);
   }
+
 
 
 }
@@ -1066,7 +1271,7 @@ void main_loop() {
   kmMat4 identity_mat;
   kmMat4Identity(&identity_mat);
   binocle_gd_apply_viewport(vp_design);
-  binocle_gd_clear(binocle_color_azure());
+  binocle_gd_clear(binocle_color_new(253/255, 44/255, 13/255, 1));
 
   binocle_gd_apply_shader(&gd, default_shader);
   // Test rect
@@ -1084,7 +1289,9 @@ void main_loop() {
   if (game_state == GAME_STATE_MENU || game_state == GAME_STATE_GAMEOVER) {
     draw_gui();
   } else {
-    draw_debug_gui();
+    if (debug_enabled) {
+      draw_debug_gui();
+    }
   }
   render_gui(vp_design);
 
@@ -1097,8 +1304,10 @@ void main_loop() {
   binocle_bitmapfont_draw_string(font, score_string, 32, &gd, 10,
                                  design_height - 36, vp_design,
                                  binocle_color_white(), identity_mat);
-  uint64_t fps = binocle_window_get_fps(&window);
-  snprintf(fps_buffer, sizeof(fps_buffer), "FPS: %llu", fps);
+  if (debug_enabled) {
+    uint64_t fps = binocle_window_get_fps(&window);
+    snprintf(fps_buffer, sizeof(fps_buffer), "FPS: %llu", fps);
+  }
   // binocle_bitmapfont_draw_string(font, fps_buffer, 32, &gd,
   // window.width-16*7, window.height-36, binocle_camera_get_viewport(camera),
   // binocle_color_black(), binocle_camera_get_transform_matrix(&camera));
@@ -1324,6 +1533,11 @@ int main(int argc, char *argv[]) {
   hero.has_gravity = true;
   hero.dir = 1;
 
+  hero.frozen_sprite = binocle_sprite_from_material(&hero_material);
+  hero.frozen_sprite.subtexture = atlas_subtextures[26];
+  hero.frozen_sprite.origin.x = 0.5f * hero.frozen_sprite.subtexture.rect.max.x;
+  hero.frozen_sprite.origin.y = 0.0f * hero.frozen_sprite.subtexture.rect.max.y;
+
   // Create the elves
   binocle_material elves_material = binocle_material_new();
   elves_material.texture = &atlas_texture;
@@ -1343,6 +1557,12 @@ int main(int argc, char *argv[]) {
     elves[i].frict = 0.8;
     elves[i].has_gravity = true;
     elves[i].dir = random_int(0, 1) == 0 ? -1 : 1;
+
+    elves[i].frozen_sprite = binocle_sprite_from_material(&elves_material);
+    elves[i].frozen_sprite.subtexture = atlas_subtextures[33];
+    elves[i].frozen_sprite.origin.x = 0.5f * elves[i].frozen_sprite.subtexture.rect.max.x;
+    elves[i].frozen_sprite.origin.y = 0.0f * elves[i].frozen_sprite.subtexture.rect.max.y;
+
   }
 
   // Create the spawners
@@ -1382,7 +1602,32 @@ int main(int argc, char *argv[]) {
     tileset[i].sprite.subtexture = binocle_subtexture_with_texture(&tiles_texture, 32*i, 0, 32, 32);
   }
 
+  // Create the star
+  binocle_material star_material = binocle_material_new();
+  star_material.texture = &atlas_texture;
+  star_material.shader = &default_shader;
+  star_sprite = binocle_sprite_from_material(&star_material);
+  star_sprite.subtexture = atlas_subtextures[23];
+  star_sprite.origin.x = 0.5f * star_sprite.subtexture.rect.max.x;
+  star_sprite.origin.y = 0.5f * star_sprite.subtexture.rect.max.y;
 
+  // Create the cloud
+  binocle_material cloud_material = binocle_material_new();
+  cloud_material.texture = &atlas_texture;
+  cloud_material.shader = &default_shader;
+  cloud_sprite = binocle_sprite_from_material(&cloud_material);
+  cloud_sprite.subtexture = atlas_subtextures[24];
+  cloud_sprite.origin.x = 0.5f * cloud_sprite.subtexture.rect.max.x;
+  cloud_sprite.origin.y = 0.5f * cloud_sprite.subtexture.rect.max.y;
+
+  // Create the box that's being thrown in the sled
+  binocle_material box_material = binocle_material_new();
+  box_material.texture = &atlas_texture;
+  box_material.shader = &default_shader;
+  box_sprite = binocle_sprite_from_material(&box_material);
+  box_sprite.subtexture = atlas_subtextures[2];
+  box_sprite.origin.x = 0.5f * box_sprite.subtexture.rect.max.x;
+  box_sprite.origin.y = 0.5f * box_sprite.subtexture.rect.max.y;
 
   init_fonts();
 
@@ -1404,9 +1649,81 @@ int main(int argc, char *argv[]) {
   // Audio has some issues with emscripten at the moment
 //#if !defined __EMSCRIPTEN__
   audio = binocle_audio_new();
-  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "8bit.ogg");
+  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "maintheme.ogg");
   music = binocle_audio_load_music(&audio, filename);
   binocle_audio_play_music(&audio, music, true);
+  binocle_audio_set_music_volume(64);
+
+  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "santa_jump.ogg");
+  sfx_santa_jump = binocle_sound_new();
+  if (!binocle_audio_load_sound(&audio, filename, &sfx_santa_jump)) {
+    binocle_log_error("Error loading sound %s", filename);
+  }
+  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "santa_freeze.ogg");
+  sfx_santa_freeze = binocle_sound_new();
+  if (!binocle_audio_load_sound(&audio, filename, &sfx_santa_freeze)) {
+    binocle_log_error("Error loading sound %s", filename);
+  }
+  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "santa_pickup.ogg");
+  sfx_santa_pickup = binocle_sound_new();
+  if (!binocle_audio_load_sound(&audio, filename, &sfx_santa_pickup)) {
+    binocle_log_error("Error loading sound %s", filename);
+  }
+  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "witch_laugh.ogg");
+  sfx_witch_laugh = binocle_sound_new();
+  if (!binocle_audio_load_sound(&audio, filename, &sfx_witch_laugh)) {
+    binocle_log_error("Error loading sound %s", filename);
+  }
+  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "elf_freeze.ogg");
+  sfx_elf_freeze = binocle_sound_new();
+  if (!binocle_audio_load_sound(&audio, filename, &sfx_elf_freeze)) {
+    binocle_log_error("Error loading sound %s", filename);
+  }
+  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "elf_pickup.ogg");
+  sfx_elf_pickup = binocle_sound_new();
+  if (!binocle_audio_load_sound(&audio, filename, &sfx_elf_pickup)) {
+    binocle_log_error("Error loading sound %s", filename);
+  }
+  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "elf_throw.ogg");
+  sfx_elf_throw = binocle_sound_new();
+  if (!binocle_audio_load_sound(&audio, filename, &sfx_elf_throw)) {
+    binocle_log_error("Error loading sound %s", filename);
+  }
+  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "go.ogg");
+  sfx_go = binocle_sound_new();
+  if (!binocle_audio_load_sound(&audio, filename, &sfx_go)) {
+    binocle_log_error("Error loading sound %s", filename);
+  }
+  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "you_win.ogg");
+  sfx_level_completed = binocle_sound_new();
+  if (!binocle_audio_load_sound(&audio, filename, &sfx_level_completed)) {
+    binocle_log_error("Error loading sound %s", filename);
+  }
+  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "cd_5.ogg");
+  sfx_cd_5 = binocle_sound_new();
+  if (!binocle_audio_load_sound(&audio, filename, &sfx_cd_5)) {
+    binocle_log_error("Error loading sound %s", filename);
+  }
+  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "cd_4.ogg");
+  sfx_cd_4 = binocle_sound_new();
+  if (!binocle_audio_load_sound(&audio, filename, &sfx_cd_4)) {
+    binocle_log_error("Error loading sound %s", filename);
+  }
+  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "cd_3.ogg");
+  sfx_cd_3 = binocle_sound_new();
+  if (!binocle_audio_load_sound(&audio, filename, &sfx_cd_3)) {
+    binocle_log_error("Error loading sound %s", filename);
+  }
+  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "cd_2.ogg");
+  sfx_cd_2 = binocle_sound_new();
+  if (!binocle_audio_load_sound(&audio, filename, &sfx_cd_2)) {
+    binocle_log_error("Error loading sound %s", filename);
+  }
+  sprintf(filename, "%s%s", BINOCLE_DATA_DIR, "cd_1.ogg");
+  sfx_cd_1 = binocle_sound_new();
+  if (!binocle_audio_load_sound(&audio, filename, &sfx_cd_1)) {
+    binocle_log_error("Error loading sound %s", filename);
+  }
 //#endif
 
   // Create the main render target (screen)
