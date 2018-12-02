@@ -1201,6 +1201,7 @@ int main(int argc, char *argv[]) {
   uint32_t real_width = 0;
   uint32_t real_height = 0;
   binocle_window_get_real_size(&window, &real_width, &real_height);
+  /*
   if (real_width > real_height) {
     uint32_t tmp = real_width;
     real_width = real_height;
@@ -1208,6 +1209,7 @@ int main(int argc, char *argv[]) {
   }
   window.width = real_width;
   window.height = real_height;
+   */
   // Default background color
   binocle_window_set_background_color(&window, binocle_color_azure());
   // Default adapter to use with the main camera
