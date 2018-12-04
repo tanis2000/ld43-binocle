@@ -46,7 +46,7 @@
 #define MAX_ELVES 4
 #define MAX_SPAWNERS 3
 #define MAX_PARTICLES 256
-#define WITCH_COOLDOWN 60
+#define WITCH_COOLDOWN 5//60
 #define MAX_COUNTDOWN_VOICE 5
 
 #if defined(WIN32)
@@ -122,6 +122,9 @@ struct witch_t {
   float sacrifice_duration;
   float sacrifice_cooldown;
   bool sacrifice_done;
+  float start_x;
+  float start_y;
+  float wander_ang;
 };
 
 struct particle_t {
@@ -900,6 +903,10 @@ void elves_update() {
         }
       }
     }
+
+    binocle_sprite_play_animation(&elves[i].sprite, "elfWalk", false);
+    binocle_sprite_update(&elves[i].sprite, (binocle_window_get_frame_time(&window) / 1000.0f));
+
   }
 }
 
@@ -910,6 +917,20 @@ void kill_elf(struct entity_t *elf) {
 }
 
 void witch_update() {
+  float center_x = (witch.entity.cx+witch.entity.xr) * GRID;
+  float center_y = (witch.entity.cy+witch.entity.yr) * GRID;
+  float a = atan2f(witch.start_y-center_y, witch.start_x-center_x);
+  float s = 0.030f;//0.0030f;
+  witch.entity.dx += cosf(a)*s*(binocle_window_get_frame_time(&window) / 1000.0);
+  witch.entity.dy += sinf(a)*s*(binocle_window_get_frame_time(&window) / 1000.0);
+
+  s = 0.015f;//0.0015f;
+  witch.wander_ang += random_float(0.03f, 0.06f) * (binocle_window_get_frame_time(&window) / 1000.0);
+  witch.entity.dx+= cosf(witch.wander_ang)*s*(binocle_window_get_frame_time(&window) / 1000.0);
+  witch.entity.dy+= sinf(witch.wander_ang)*s*(binocle_window_get_frame_time(&window) / 1000.0);
+
+  entity_update(&witch.entity);
+
   if (witch.floating_cooldown > 0) {
     witch.floating_cooldown -= (binocle_window_get_frame_time(&window) / 1000.0);
     return;
@@ -1039,6 +1060,16 @@ void game_update() {
         }
       }
     }
+
+    if (!hero.on_ground && hero.dy >0) {
+      binocle_sprite_play_animation(&hero.sprite, "heroJump", false); // up
+    } else if (!hero.on_ground && hero.dy < 0) {
+      binocle_sprite_play_animation(&hero.sprite, "heroJump", false); // down
+    } else if (fabs(hero.dx) >= 0.05f) {
+      binocle_sprite_play_animation(&hero.sprite, "heroWalk", false);
+    } else {
+      binocle_sprite_play_animation(&hero.sprite, "heroIdle", false);
+    }
   }
 
   binocle_sprite_update(&hero.sprite, (binocle_window_get_frame_time(&window) / 1000.0f));
@@ -1097,7 +1128,11 @@ void game_update() {
       if (packages_left > 0) {
         witch_countdown = 0;
         spawn_witch(&witch.entity);
-        entity_set_grid_position(&witch.entity, 19, 5);
+        //entity_set_grid_position(&witch.entity, 19, 5);
+        entity_set_grid_position(&witch.entity, 10, 5);
+        witch.wander_ang = 0;
+        witch.start_x = witch.entity.pos.x;
+        witch.start_y = witch.entity.pos.y;
         witch.floating_cooldown = 5;
         witch.sacrifice_cooldown = 5;
         witch.sacrifice_done = false;
@@ -1554,7 +1589,10 @@ int main(int argc, char *argv[]) {
   hero.frozen_sprite.origin.x = 0.5f * hero.frozen_sprite.subtexture.rect.max.x;
   hero.frozen_sprite.origin.y = 0.0f * hero.frozen_sprite.subtexture.rect.max.y;
 
-  binocle_sprite_create_animation(&hero.sprite, "heroIdle", "tiles_00.png,tiles_17.png", "0-1", atlas_subtextures, atlas_subtextures_num);
+  //binocle_sprite_create_animation(&hero.sprite, "heroTest", "tiles_00.png,tiles_17.png,tiles_26.png,tiles_27.png", "0-1,2:3,3:2,0-2:3", true, atlas_subtextures, atlas_subtextures_num);
+  binocle_sprite_create_animation(&hero.sprite, "heroIdle", "tiles_00.png,tiles_17.png", "0-1:0.7", true, atlas_subtextures, atlas_subtextures_num);
+  binocle_sprite_create_animation(&hero.sprite, "heroWalk", "tiles_18.png,tiles_19.png", "0-1:0.3", true, atlas_subtextures, atlas_subtextures_num);
+  binocle_sprite_create_animation(&hero.sprite, "heroJump", "tiles_00.png", "0", false, atlas_subtextures, atlas_subtextures_num);
   binocle_sprite_play_animation(&hero.sprite, "heroIdle", false);
 
   // Create the elves
@@ -1582,6 +1620,8 @@ int main(int argc, char *argv[]) {
     elves[i].frozen_sprite.origin.x = 0.5f * elves[i].frozen_sprite.subtexture.rect.max.x;
     elves[i].frozen_sprite.origin.y = 0.0f * elves[i].frozen_sprite.subtexture.rect.max.y;
 
+    binocle_sprite_create_animation(&elves[i].sprite, "elfWalk", "tiles_21.png,tiles_22.png", "0-1:0.2", true, atlas_subtextures, atlas_subtextures_num);
+    binocle_sprite_play_animation(&elves[i].sprite, "elfWalk", false);
   }
 
   // Create the spawners
