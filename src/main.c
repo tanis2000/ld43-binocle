@@ -642,7 +642,7 @@ void load_tilemap() {
   }
 
   cute_tiled_free_map(map);
-  //free(json);
+  free(json); // TODO: this causes errors on Windows. Find out why
 
 }
 
@@ -866,7 +866,7 @@ void entity_update(struct entity_t *e) {
 }
 
 void elves_update() {
-  float speed = 0.22f;
+  float speed = 0.8f;
   for (int i = 0 ; i < MAX_ELVES ; i++) {
     if (elves[i].dead) {
       continue;
@@ -874,9 +874,9 @@ void elves_update() {
 
     if (elves[i].carried_item_kind == ITEM_KIND_NONE) {
       if (elves[i].dir == 1) {
-        elves[i].dx += speed * (1.0f / window.frame_time);
+        elves[i].dx += speed * (binocle_window_get_frame_time(&window) / 1000.0f);
       } else {
-        elves[i].dx -= speed * (1.0f / window.frame_time);
+        elves[i].dx -= speed * (binocle_window_get_frame_time(&window) / 1000.0f);
       }
 
       if (elves[i].cx == 1 && elves[i].dir == -1) {
@@ -886,7 +886,7 @@ void elves_update() {
       }
     } else if (elves[i].carried_item_kind == ITEM_KIND_WRAP) {
       elves[i].dir = 1;
-      elves[i].dx += speed * (1.0f / window.frame_time);
+      elves[i].dx += speed * (binocle_window_get_frame_time(&window) / 1000.0f);
       if (elves[i].cx == map_width_in_tiles - 2) {
         elves[i].carried_item_kind = ITEM_KIND_NONE;
         free(elves[i].carried_entity);
@@ -972,7 +972,7 @@ void game_update() {
     return;
   }
 
-  float speed = 0.72;
+  float speed = 2.0f;
 
   if (game_state == GAME_STATE_WITCH) {
     // Ignore player input while displaying the witch
@@ -983,16 +983,16 @@ void game_update() {
     }
   } else {
     if (binocle_input_is_key_pressed(input, KEY_RIGHT)) {
-      hero.dx += speed * (1.0f / window.frame_time);
+      hero.dx += speed * (binocle_window_get_frame_time(&window) / 1000.0f);
       hero.dir = 1;
     } else if (binocle_input_is_key_pressed(input, KEY_LEFT)) {
-      hero.dx -= speed * (1.0f / window.frame_time);
+      hero.dx -= speed * (binocle_window_get_frame_time(&window) / 1000.0f);
       hero.dir = -1;
     }
 
     if (binocle_input_is_key_pressed(input, KEY_UP)) {
       if (hero.on_ground) {
-        hero.dy = 10.0f * (1.0f / window.frame_time);
+        hero.dy = 30.0f * (binocle_window_get_frame_time(&window) / 1000.0f);
         hero.dx *= 1.2f;
         binocle_audio_play_sound(&audio, &sfx_santa_jump);
       }
@@ -1041,14 +1041,15 @@ void game_update() {
     }
   }
 
+  binocle_sprite_update(&hero.sprite, (binocle_window_get_frame_time(&window) / 1000.0f));
 
   elves_update();
 
   update_particles();
 
   if (window.frame_time > 0) {
-    float dt = 1.0f / window.frame_time;
-    //rot += 50 * (1.0 / window.frame_time);
+    float dt = (binocle_window_get_frame_time(&window) / 1000.0f);
+    //rot += 50 * (binocle_window_get_frame_time(&window) / 1000.0f);
     //rot = (int64_t)rot % 360;
     if (player.speed.y > -300) {
       player.speed.y -= gravity * dt;
@@ -1071,10 +1072,10 @@ void game_update() {
     player_collider.max.x = player.pos.x + player.sprite.subtexture.rect.max.x;
     player_collider.max.y = player.pos.y + player.sprite.subtexture.rect.max.y;
 
-    enemy_rot += 50 * (1.0 / window.frame_time);
+    enemy_rot += 50 * (binocle_window_get_frame_time(&window) / 1000.0f);
     enemy_rot = (int64_t)enemy_rot % 360;
 
-    binocle_sprite_update(&enemy, (1.0f / window.frame_time));
+    binocle_sprite_update(&enemy, (binocle_window_get_frame_time(&window) / 1000.0f));
 
     scroller_x += 20.0f * dt;
 
@@ -1553,6 +1554,9 @@ int main(int argc, char *argv[]) {
   hero.frozen_sprite.origin.x = 0.5f * hero.frozen_sprite.subtexture.rect.max.x;
   hero.frozen_sprite.origin.y = 0.0f * hero.frozen_sprite.subtexture.rect.max.y;
 
+  binocle_sprite_create_animation(&hero.sprite, "heroIdle", "tiles_00.png,tiles_17.png", "0-1", atlas_subtextures, atlas_subtextures_num);
+  binocle_sprite_play_animation(&hero.sprite, "heroIdle", false);
+
   // Create the elves
   binocle_material elves_material = binocle_material_new();
   elves_material.texture = &atlas_texture;
@@ -1758,6 +1762,7 @@ int main(int argc, char *argv[]) {
   binocle_log_info("Quit requested");
 #endif
   destroy_fonts();
+  binocle_audio_destroy(&audio);
   binocle_sdl_exit();
 
   return 0;
