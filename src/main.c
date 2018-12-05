@@ -46,7 +46,7 @@
 #define MAX_ELVES 4
 #define MAX_SPAWNERS 3
 #define MAX_PARTICLES 256
-#define WITCH_COOLDOWN 5//60
+#define WITCH_COOLDOWN 60
 #define MAX_COUNTDOWN_VOICE 5
 
 #if defined(WIN32)
@@ -233,6 +233,11 @@ binocle_sound sfx_cd_2;
 binocle_sound sfx_cd_1;
 struct countdown_voice_t voice_countdowns[MAX_COUNTDOWN_VOICE];
 char *binocle_data_dir = NULL;
+float camera_shake_cooldown = 0.0f;
+kmVec2 camera_shake_direction;
+kmVec2 camera_shake_offset;
+float camera_shake_intensity = 0.0f;
+float camera_shake_degradation = 0.95f;
 
 // Nuklear
 struct nk_context ctx;
@@ -970,6 +975,53 @@ void witch_update() {
   game_state = GAME_STATE_RUN;
 }
 
+void start_camera_shake() {
+  camera_shake_cooldown = 3.0f;
+  camera_shake_intensity = 15.0f;
+  camera_shake_direction.x = 0;
+  camera_shake_direction.y = 0;
+}
+
+void reset_camera() {
+  binocle_camera_set_position(&camera, 0, 0);
+}
+
+void update_camera() {
+  if (camera_shake_cooldown < 0) {
+    reset_camera();
+    return;
+  }
+  camera_shake_cooldown -= (binocle_window_get_frame_time(&window) / 1000.0f);
+
+  if (fabsf(camera_shake_intensity) > 0) {
+    camera_shake_offset.x = camera_shake_direction.x;
+    camera_shake_offset.y = camera_shake_direction.y;
+
+    if(camera_shake_offset.x != 0.0f || camera_shake_offset.y != 0.0f )
+    {
+      kmVec2Normalize(&camera_shake_offset, &camera_shake_offset);
+    }
+    else
+    {
+      camera_shake_offset.x = camera_shake_offset.x + random_float(0, 1) - 0.5f;
+      camera_shake_offset.y = camera_shake_offset.y + random_float(0, 1) - 0.5f;
+    }
+
+    // TODO: this needs to be multiplied by camera zoom so that less shake gets applied when zoomed in
+    camera_shake_offset.x *= camera_shake_intensity;
+    camera_shake_offset.y *= camera_shake_intensity;
+    camera_shake_intensity *= camera_shake_degradation;
+    if(fabsf(camera_shake_intensity) <= 0.01f )
+    {
+      camera_shake_intensity = 0.0f;
+      camera_shake_offset.x = 0.0f;
+      camera_shake_offset.y = 0.0f;
+      reset_camera();
+    }
+    binocle_camera_set_position(&camera, camera.position.x + (int)camera_shake_offset.x, camera.position.y + (int)camera_shake_offset.y);
+  }
+}
+
 void game_update() {
   entity_update(&hero);
 
@@ -1139,6 +1191,7 @@ void game_update() {
         spawn_particle(&star_sprite, witch.entity.pos.x, witch.entity.pos.y, 2, 10);
         binocle_audio_play_sound(&audio, &sfx_witch_laugh);
         binocle_audio_play_sound(&audio, &sfx_santa_freeze);
+        start_camera_shake();
         game_state = GAME_STATE_WITCH;
       } else {
         packages_left = packages_left_original;
@@ -1150,6 +1203,8 @@ void game_update() {
       }
     }
   }
+
+  update_camera();
 
 }
 
@@ -1167,13 +1222,13 @@ void game_render() {
   double_scale.x = 2;
   double_scale.y = 2;
   binocle_sprite_draw(player.sprite, &gd, (int64_t)player.pos.x, (int64_t)player.pos.y,
-                      vp_design, player.rot * (float)M_PI / 180.0f, double_scale);
+                      vp_design, player.rot * (float)M_PI / 180.0f, double_scale, &camera);
 
   // Enemy
   // binocle_sprite_draw(enemy, &gd, (int64_t)enemy_pos.x, (int64_t)enemy_pos.y,
   // binocle_camera_get_viewport(camera), enemy_rot * (float)M_PI / 180.0f, 2);
   binocle_sprite_draw(enemy, &gd, (int64_t)enemy_pos.x, (int64_t)enemy_pos.y,
-                      vp_design, enemy_rot * (float)M_PI / 180.0f, double_scale);
+                      vp_design, enemy_rot * (float)M_PI / 180.0f, double_scale, &camera);
 
 
   kmVec2 scale;
@@ -1185,7 +1240,7 @@ void game_render() {
     for (int w = 0 ; w < map_width_in_tiles ; w++ ) {
       if (bg_layer.tiles_gid[h * map_width_in_tiles + w] != -1) {
         binocle_sprite_draw(tileset[bg_layer.tiles_gid[h * map_width_in_tiles + w]].sprite, &gd, w * 32, h * 32,
-                            vp_design, 0, scale);
+                            vp_design, 0, scale, &camera);
       }
     }
   }
@@ -1194,7 +1249,7 @@ void game_render() {
   for (int h = 0 ; h < map_height_in_tiles ; h++) {
     for (int w = 0 ; w < map_width_in_tiles ; w++ ) {
       if (walls_layer.tiles_gid[h * map_width_in_tiles + w] != -1) {
-        binocle_sprite_draw(tileset[walls_layer.tiles_gid[h * map_width_in_tiles + w]].sprite, &gd, w * 32, h * 32, vp_design, 0, scale);
+        binocle_sprite_draw(tileset[walls_layer.tiles_gid[h * map_width_in_tiles + w]].sprite, &gd, w * 32, h * 32, vp_design, 0, scale, &camera);
       }
     }
   }
@@ -1204,7 +1259,7 @@ void game_render() {
     for (int w = 0 ; w < map_width_in_tiles ; w++ ) {
       if (props_layer.tiles_gid[h * map_width_in_tiles + w] != -1) {
         binocle_sprite_draw(tileset[props_layer.tiles_gid[h * map_width_in_tiles + w]].sprite, &gd, w * 32, h * 32,
-                            vp_design, 0, scale);
+                            vp_design, 0, scale, &camera);
       }
     }
   }
@@ -1212,28 +1267,28 @@ void game_render() {
   // Spawners
   for (int i = 0 ; i < MAX_SPAWNERS ; i++) {
     binocle_sprite_draw(spawners[i].entity.sprite, &gd, (int64_t)spawners[i].entity.pos.x, (int64_t)spawners[i].entity.pos.y,
-                        vp_design, 0, spawners[i].entity.scale);
+                        vp_design, 0, spawners[i].entity.scale, &camera);
   }
 
   // Elves
   for (int i = 0 ; i < MAX_ELVES ; i++) {
     if (!elves[i].dead) {
       binocle_sprite_draw(elves[i].sprite, &gd, (int64_t)elves[i].pos.x, (int64_t)elves[i].pos.y,
-                          vp_design, 0, elves[i].scale);
+                          vp_design, 0, elves[i].scale, &camera);
       if (elves[i].carried_entity != NULL) {
         binocle_sprite_draw(elves[i].carried_entity->sprite, &gd, (int64_t)elves[i].carried_entity->pos.x, (int64_t)elves[i].carried_entity->pos.y,
-                            vp_design, 0, elves[i].carried_entity->scale);
+                            vp_design, 0, elves[i].carried_entity->scale, &camera);
       }
     } else {
       binocle_sprite_draw(elves[i].frozen_sprite, &gd, (int64_t)elves[i].pos.x, (int64_t)elves[i].pos.y,
-                          vp_design, 0, elves[i].scale);
+                          vp_design, 0, elves[i].scale, &camera);
     }
   }
 
   // Witch
   if (game_state == GAME_STATE_WITCH) {
     binocle_sprite_draw(witch.entity.sprite, &gd, (int64_t)witch.entity.pos.x, (int64_t)witch.entity.pos.y,
-                        vp_design, 0, witch.entity.scale);
+                        vp_design, 0, witch.entity.scale, &camera);
     char s[100];
     sprintf(s, "You ran out of time! I'll sacrifice an elf!");
     binocle_bitmapfont_draw_string(font, s, 24, &gd, witch.entity.pos.x - 12 * GRID,
@@ -1245,7 +1300,7 @@ void game_render() {
   for (int i = 0 ; i < MAX_PARTICLES ; i++) {
     if (particles[i].alive) {
       binocle_sprite_draw(*particles[i].sprite, &gd, (int64_t)particles[i].pos.x, (int64_t)particles[i].pos.y,
-                          vp_design, 0, particles[i].scale);
+                          vp_design, 0, particles[i].scale, &camera);
     }
   }
 
@@ -1253,14 +1308,14 @@ void game_render() {
 
   if (game_state == GAME_STATE_WITCH) {
     binocle_sprite_draw(hero.frozen_sprite, &gd, (int64_t)hero.pos.x, (int64_t)hero.pos.y,
-                        vp_design, 0, hero.scale);
+                        vp_design, 0, hero.scale, &camera);
   } else {
     binocle_sprite_draw(hero.sprite, &gd, (int64_t)hero.pos.x, (int64_t)hero.pos.y,
-                        vp_design, 0, hero.scale);
+                        vp_design, 0, hero.scale, &camera);
   }
   if (hero.carried_entity != NULL) {
     binocle_sprite_draw(hero.carried_entity->sprite, &gd, (int64_t)hero.carried_entity->pos.x, (int64_t)hero.carried_entity->pos.y + 32,
-                        vp_design, 0, hero.carried_entity->scale);
+                        vp_design, 0, hero.carried_entity->scale, &camera);
   }
 
 
