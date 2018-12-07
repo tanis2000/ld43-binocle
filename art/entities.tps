@@ -215,6 +215,10 @@
             <key type="filename">../assets/tiles_31.png</key>
             <key type="filename">../assets/tiles_32.png</key>
             <key type="filename">../assets/tiles_33.png</key>
+            <key type="filename">../assets/tiles_34.png</key>
+            <key type="filename">../assets/tiles_35.png</key>
+            <key type="filename">../assets/tiles_36.png</key>
+            <key type="filename">../assets/tiles_37.png</key>
             <struct type="IndividualSpriteSettings">
                 <key>pivotPoint</key>
                 <point_f>0.5,0.5</point_f>
@@ -264,6 +268,10 @@
             <filename>../assets/tiles_31.png</filename>
             <filename>../assets/tiles_32.png</filename>
             <filename>../assets/tiles_33.png</filename>
+            <filename>../assets/tiles_34.png</filename>
+            <filename>../assets/tiles_35.png</filename>
+            <filename>../assets/tiles_36.png</filename>
+            <filename>../assets/tiles_37.png</filename>
         </array>
         <key>ignoreFileList</key>
         <array/>

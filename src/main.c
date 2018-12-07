@@ -48,6 +48,8 @@
 #define MAX_PARTICLES 256
 #define WITCH_COOLDOWN 60
 #define MAX_COUNTDOWN_VOICE 5
+#define MAX_BARRELS_SPAWNERS 10
+#define MAX_BARRELS 20
 
 #if defined(WIN32)
 #define drand48() (rand() / (RAND_MAX + 1.0))
@@ -143,6 +145,18 @@ struct countdown_voice_t {
   bool enabled;
 };
 
+struct barrel_t {
+  struct entity_t entity;
+  bool alive;
+};
+
+struct barrel_spawner_t {
+  float pos_x;
+  float pos_y;
+  float cooldown;
+  int dir;
+};
+
 // Window stuff
 uint32_t design_width = 640;
 uint32_t design_height = 480;
@@ -184,6 +198,7 @@ binocle_shader ui_shader;
 float time = 0;
 binocle_audio audio;
 binocle_music *music;
+binocle_music *game_music;
 binocle_texture player_texture;
 binocle_texture texture;
 int num_frames = 0;
@@ -238,6 +253,9 @@ kmVec2 camera_shake_direction;
 kmVec2 camera_shake_offset;
 float camera_shake_intensity = 0.0f;
 float camera_shake_degradation = 0.95f;
+struct barrel_spawner_t barrels_spawners[MAX_BARRELS_SPAWNERS];
+int barrels_spawners_number = 0;
+struct barrel_t barrels[MAX_BARRELS];
 
 // Nuklear
 struct nk_context ctx;
@@ -376,6 +394,8 @@ void draw_gui() {
           elves[i].dead = false;
         }
         reset_voice_countdowns(witch_countdown);
+        binocle_audio_play_music(&audio, game_music, true);
+        binocle_audio_set_music_volume(64);
         game_state = GAME_STATE_RUN;
       }
       if (nk_button_label(&ctx, "Quit")) {
@@ -601,6 +621,14 @@ void build_spawner(int index, float x, float y, item_kind_t item_kind) {
   spawners[index].item_kind = item_kind;
 }
 
+void build_barrels_spawner(float x, float y, int dir) {
+  barrels_spawners[barrels_spawners_number].pos_x = x;
+  barrels_spawners[barrels_spawners_number].pos_y = (map_height_in_tiles - 1) * GRID - y;
+  barrels_spawners[barrels_spawners_number].cooldown = 3;
+  barrels_spawners[barrels_spawners_number].dir = dir;
+  barrels_spawners_number++;
+}
+
 void load_tilemap() {
   char filename[1024];
   sprintf(filename, "%s%s", binocle_data_dir, "map.json");
@@ -640,6 +668,10 @@ void load_tilemap() {
           build_spawner(1, object->x, object->y, ITEM_KIND_PACKAGE);
         } else if (strcmp(object->name.ptr, "wraps") == 0) {
           build_spawner(2, object->x, object->y, ITEM_KIND_WRAP);
+        } else if (strcmp(object->name.ptr, "barrels-l") == 0) {
+          build_barrels_spawner(object->x, object->y, 1);
+        } else if (strcmp(object->name.ptr, "barrels-r") == 0) {
+          build_barrels_spawner(object->x, object->y, -1);
         }
 
         object = object->next;
@@ -966,6 +998,8 @@ void witch_update() {
 
   if (elves_alive == 0) {
     game_state = GAME_STATE_GAMEOVER;
+    binocle_audio_play_music(&audio, music, true);
+    binocle_audio_set_music_volume(64);
     return;
   }
 
@@ -1019,6 +1053,48 @@ void update_camera() {
       reset_camera();
     }
     binocle_camera_set_position(&camera, camera.position.x + (int)camera_shake_offset.x, camera.position.y + (int)camera_shake_offset.y);
+  }
+}
+
+void spawn_barrel(float pos_x, float pos_y, int dir) {
+  for (int i = 0 ; i < MAX_BARRELS ; i++) {
+    if (!barrels[i].alive) {
+      barrels[i].alive = true;
+      barrels[i].entity.dir = dir;
+      entity_set_position(&barrels[i].entity, pos_x, pos_y);
+      binocle_sprite_play_animation(&barrels[i].entity.sprite, "barrelRoll", true);
+      break;
+    }
+  }
+}
+
+void barrels_spawners_update() {
+  for (int i = 0 ; i < barrels_spawners_number ; i++) {
+    if (barrels_spawners[i].cooldown < 0) {
+      spawn_barrel(barrels_spawners[i].pos_x, barrels_spawners[i].pos_y, barrels_spawners[i].dir);
+      barrels_spawners[i].cooldown = 5;
+    }
+    barrels_spawners[i].cooldown -= (binocle_window_get_frame_time(&window) / 1000.0f);
+  }
+}
+
+void update_barrels() {
+  float speed = 0.4;
+  for (int i = 0 ; i < MAX_BARRELS ; i++) {
+    if (barrels[i].alive) {
+      if (barrels[i].entity.dir == 1) {
+        barrels[i].entity.dx += speed * (binocle_window_get_frame_time(&window) / 1000.0f);
+      } else {
+        barrels[i].entity.dx -= speed * (binocle_window_get_frame_time(&window) / 1000.0f);
+      }
+      if (barrels[i].entity.cx == 1 && barrels[i].entity.xr <= 0.2f && barrels[i].entity.dir == -1) {
+        barrels[i].alive = false;
+      } else if (barrels[i].entity.cx == map_width_in_tiles - 2 && barrels[i].entity.xr >= 0.8f && barrels[i].entity.dir == 1) {
+        barrels[i].alive = false;
+      }
+      entity_update(&barrels[i].entity);
+      binocle_sprite_update(&barrels[i].entity.sprite, (binocle_window_get_frame_time(&window) / 1000.0f));
+    }
   }
 }
 
@@ -1127,6 +1203,10 @@ void game_update() {
   binocle_sprite_update(&hero.sprite, (binocle_window_get_frame_time(&window) / 1000.0f));
 
   elves_update();
+
+  barrels_spawners_update();
+
+  update_barrels();
 
   update_particles();
 
@@ -1294,6 +1374,14 @@ void game_render() {
     binocle_bitmapfont_draw_string(font, s, 24, &gd, witch.entity.pos.x - 12 * GRID,
                                    witch.entity.pos.y, vp_design,
                                    binocle_color_new(0.0f/255.0f, 166.0f/255.0f, 81.0f/255.0f, 1.0f), identity_mat);
+  }
+
+  // Barrels
+  for (int i = 0 ; i < MAX_BARRELS ; i++) {
+    if (barrels[i].alive) {
+      binocle_sprite_draw(barrels[i].entity.sprite, &gd, (int64_t)barrels[i].entity.pos.x, (int64_t)barrels[i].entity.pos.y,
+                          vp_design, 0, barrels[i].entity.scale, &camera);
+    }
   }
 
   // Particles
@@ -1743,6 +1831,29 @@ int main(int argc, char *argv[]) {
   box_sprite.origin.x = 0.5f * box_sprite.subtexture.rect.max.x;
   box_sprite.origin.y = 0.5f * box_sprite.subtexture.rect.max.y;
 
+  // Create the barrels (pooling)
+  binocle_material barrels_material = binocle_material_new();
+  barrels_material.texture = &atlas_texture;
+  barrels_material.shader = &default_shader;
+  for (int i = 0 ; i < MAX_BARRELS ; i++) {
+    barrels[i].entity.rot = 0;
+    barrels[i].entity.sprite = binocle_sprite_from_material(&barrels_material);
+    barrels[i].entity.sprite.subtexture = atlas_subtextures[1];
+    barrels[i].entity.sprite.origin.x = 0.5f * barrels[i].entity.sprite.subtexture.rect.max.x;
+    barrels[i].entity.sprite.origin.y = 0.0f * barrels[i].entity.sprite.subtexture.rect.max.y;
+    barrels[i].entity.dx = 0;
+    barrels[i].entity.dy = 0;
+    barrels[i].entity.xr = 0.5;
+    barrels[i].entity.yr = 1.0;
+    barrels[i].entity.cx = 0;
+    barrels[i].entity.cy = 0;
+    barrels[i].entity.frict = 0.8;
+    barrels[i].entity.has_gravity = true;
+    barrels[i].entity.dir = 1;
+
+    binocle_sprite_create_animation(&barrels[i].entity.sprite, "barrelRoll", "tiles_34.png,tiles_35.png,tiles_36.png,tiles_37.png", "0-3:0.3", true, atlas_subtextures, atlas_subtextures_num);
+  }
+
   init_fonts();
 
   testRect.min.x = 0;
@@ -1767,6 +1878,9 @@ int main(int argc, char *argv[]) {
   music = binocle_audio_load_music(&audio, filename);
   binocle_audio_play_music(&audio, music, true);
   binocle_audio_set_music_volume(64);
+
+  sprintf(filename, "%s%s", binocle_data_dir, "xmas.ogg");
+  game_music = binocle_audio_load_music(&audio, filename);
 
   sprintf(filename, "%s%s", binocle_data_dir, "santa_jump.ogg");
   sfx_santa_jump = binocle_sound_new();
