@@ -303,14 +303,30 @@
 	"trimmed": false,
 	"spriteSourceSize": {"x":0,"y":0,"w":32,"h":32},
 	"sourceSize": {"w":32,"h":32}
+},
+{
+	"filename": "tiles_38.png",
+	"frame": {"x":1216,"y":0,"w":32,"h":32},
+	"rotated": false,
+	"trimmed": false,
+	"spriteSourceSize": {"x":0,"y":0,"w":32,"h":32},
+	"sourceSize": {"w":32,"h":32}
+},
+{
+	"filename": "tiles_39.png",
+	"frame": {"x":1248,"y":0,"w":32,"h":32},
+	"rotated": false,
+	"trimmed": false,
+	"spriteSourceSize": {"x":0,"y":0,"w":32,"h":32},
+	"sourceSize": {"w":32,"h":32}
 }],
 "meta": {
 	"app": "https://www.codeandweb.com/texturepacker",
 	"version": "1.0",
 	"image": "entities.png",
 	"format": "RGBA8888",
-	"size": {"w":1216,"h":32},
+	"size": {"w":1280,"h":32},
 	"scale": "1",
-	"smartupdate": "$TexturePacker:SmartUpdate:19a59db6d4193526506f621c54915aa1:cfb40a93eec62b76c336e3bc82d363ff:d80676a5e85c5032e708efda4f84d8e3$"
+	"smartupdate": "$TexturePacker:SmartUpdate:4abb19d21ef4ab1620b5db876336cf95:f2d87c6bc440adc288818e734b5bcd90:d80676a5e85c5032e708efda4f84d8e3$"
 }
 }

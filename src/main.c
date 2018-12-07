@@ -99,6 +99,9 @@ struct entity_t {
   int dir;
   item_kind_t carried_item_kind;
   struct entity_t *carried_entity;
+  float hei;
+  bool locked; // needed for hero only
+  float lock_cooldown; // needed for hero only
 };
 
 struct tile_t {
@@ -805,6 +808,12 @@ bool spawn_witch(struct entity_t *entity) {
   return true;
 }
 
+struct entity_t entity_new() {
+  struct entity_t res = { 0 };
+  res.hei = GRID;
+  return res;
+}
+
 void entity_set_position(struct entity_t *entity, float x, float y) {
   entity->pos.x = x;
   entity->pos.y = y;
@@ -821,6 +830,28 @@ void entity_set_grid_position(struct entity_t *entity, int cx, int cy) {
   entity->yr = 1.0f;
   entity->pos.x = (int64_t)((entity->cx + entity->xr) * GRID);
   entity->pos.y = (int64_t)((entity->cy + entity->yr) * GRID);
+}
+
+float entity_foot_x(struct entity_t *entity) {
+  return (entity->cx + entity->xr) * GRID;
+}
+
+float entity_foot_y(struct entity_t *entity) {
+  return (entity->cy + entity->yr) * GRID;
+}
+
+float entity_head_x(struct entity_t *entity) {
+  return (entity->cx + entity->xr) * GRID;
+}
+
+float entity_head_y(struct entity_t *entity) {
+  return (entity->cy + entity->yr) * GRID - entity->hei;
+}
+
+float entity_dist_px(struct entity_t *e1, struct entity_t *e2) {
+  float dist_sqr = (entity_foot_x(e1) - entity_foot_x(e2)) * (entity_foot_x(e1) - entity_foot_x(e2)) +
+    (entity_foot_y(e1) - entity_foot_y(e2)) * (entity_foot_y(e1) - entity_foot_y(e2));
+  return sqrtf(dist_sqr);
 }
 
 void entity_update(struct entity_t *e) {
@@ -1131,65 +1162,86 @@ void game_update() {
       return;
     }
   } else {
-    if (binocle_input_is_key_pressed(input, KEY_RIGHT)) {
-      hero.dx += speed * (binocle_window_get_frame_time(&window) / 1000.0f);
-      hero.dir = 1;
-    } else if (binocle_input_is_key_pressed(input, KEY_LEFT)) {
-      hero.dx -= speed * (binocle_window_get_frame_time(&window) / 1000.0f);
-      hero.dir = -1;
-    }
-
-    if (binocle_input_is_key_pressed(input, KEY_UP)) {
-      if (hero.on_ground) {
-        hero.dy = 30.0f * (binocle_window_get_frame_time(&window) / 1000.0f);
-        hero.dx *= 1.2f;
-        binocle_audio_play_sound(&audio, &sfx_santa_jump);
+    if (!hero.locked) {
+      if (binocle_input_is_key_pressed(input, KEY_RIGHT)) {
+        hero.dx += speed * (binocle_window_get_frame_time(&window) / 1000.0f);
+        hero.dir = 1;
+      } else if (binocle_input_is_key_pressed(input, KEY_LEFT)) {
+        hero.dx -= speed * (binocle_window_get_frame_time(&window) / 1000.0f);
+        hero.dir = -1;
       }
-    } else if (binocle_input_is_key_pressed(input, KEY_DOWN)) {
-    }
 
-    if (binocle_input_is_key_pressed(input, KEY_SPACE)) {
-      // Interaction with spawners
-      for (int i = 0 ; i < MAX_SPAWNERS ; i++) {
-        if (hero.cx == spawners[i].entity.cx
-            && hero.cy == spawners[i].entity.cy) {
-          if (hero.carried_item_kind == ITEM_KIND_NONE && spawners[i].item_kind == ITEM_KIND_TOY) {
-            hero.carried_item_kind = ITEM_KIND_TOY;
-            hero.carried_entity = malloc(sizeof(struct entity_t));
-            spawn_item(hero.carried_entity, ITEM_KIND_TOY);
-            binocle_audio_play_sound(&audio, &sfx_santa_pickup);
-          } else if (hero.carried_item_kind == ITEM_KIND_TOY && spawners[i].item_kind == ITEM_KIND_PACKAGE) {
-            hero.carried_item_kind = ITEM_KIND_PACKAGE;
-            free(hero.carried_entity);
-            hero.carried_entity = malloc(sizeof(struct entity_t));
-            spawn_item(hero.carried_entity, ITEM_KIND_PACKAGE);
-            binocle_audio_play_sound(&audio, &sfx_santa_pickup);
-          } else if (hero.carried_item_kind == ITEM_KIND_PACKAGE && spawners[i].item_kind == ITEM_KIND_WRAP) {
-            hero.carried_item_kind = ITEM_KIND_WRAP;
-            free(hero.carried_entity);
-            hero.carried_entity = malloc(sizeof(struct entity_t));
-            spawn_item(hero.carried_entity, ITEM_KIND_WRAP);
-            binocle_audio_play_sound(&audio, &sfx_santa_pickup);
+      if (binocle_input_is_key_pressed(input, KEY_UP)) {
+        if (hero.on_ground) {
+          hero.dy = 30.0f * (binocle_window_get_frame_time(&window) / 1000.0f);
+          hero.dx *= 1.2f;
+          binocle_audio_play_sound(&audio, &sfx_santa_jump);
+        }
+      } else if (binocle_input_is_key_pressed(input, KEY_DOWN)) {
+      }
+
+      if (binocle_input_is_key_pressed(input, KEY_SPACE)) {
+        // Interaction with spawners
+        for (int i = 0 ; i < MAX_SPAWNERS ; i++) {
+          if (hero.cx == spawners[i].entity.cx
+              && hero.cy == spawners[i].entity.cy) {
+            if (hero.carried_item_kind == ITEM_KIND_NONE && spawners[i].item_kind == ITEM_KIND_TOY) {
+              hero.carried_item_kind = ITEM_KIND_TOY;
+              hero.carried_entity = malloc(sizeof(struct entity_t));
+              spawn_item(hero.carried_entity, ITEM_KIND_TOY);
+              binocle_audio_play_sound(&audio, &sfx_santa_pickup);
+            } else if (hero.carried_item_kind == ITEM_KIND_TOY && spawners[i].item_kind == ITEM_KIND_PACKAGE) {
+              hero.carried_item_kind = ITEM_KIND_PACKAGE;
+              free(hero.carried_entity);
+              hero.carried_entity = malloc(sizeof(struct entity_t));
+              spawn_item(hero.carried_entity, ITEM_KIND_PACKAGE);
+              binocle_audio_play_sound(&audio, &sfx_santa_pickup);
+            } else if (hero.carried_item_kind == ITEM_KIND_PACKAGE && spawners[i].item_kind == ITEM_KIND_WRAP) {
+              hero.carried_item_kind = ITEM_KIND_WRAP;
+              free(hero.carried_entity);
+              hero.carried_entity = malloc(sizeof(struct entity_t));
+              spawn_item(hero.carried_entity, ITEM_KIND_WRAP);
+              binocle_audio_play_sound(&audio, &sfx_santa_pickup);
+            }
+          }
+        }
+
+        // Interaction with elves
+        for (int i = 0 ; i < MAX_ELVES ; i++) {
+          if (hero.cx == elves[i].cx
+              && hero.cy == elves[i].cy) {
+            if (hero.carried_item_kind == ITEM_KIND_WRAP && !elves[i].dead && elves[i].carried_item_kind == ITEM_KIND_NONE) {
+              elves[i].carried_item_kind = ITEM_KIND_WRAP;
+              elves[i].carried_entity = hero.carried_entity;
+              hero.carried_item_kind = ITEM_KIND_NONE;
+              hero.carried_entity = NULL;
+              binocle_audio_play_sound(&audio, &sfx_elf_pickup);
+            }
           }
         }
       }
 
-      // Interaction with elves
-      for (int i = 0 ; i < MAX_ELVES ; i++) {
-        if (hero.cx == elves[i].cx
-            && hero.cy == elves[i].cy) {
-          if (hero.carried_item_kind == ITEM_KIND_WRAP && !elves[i].dead && elves[i].carried_item_kind == ITEM_KIND_NONE) {
-            elves[i].carried_item_kind = ITEM_KIND_WRAP;
-            elves[i].carried_entity = hero.carried_entity;
-            hero.carried_item_kind = ITEM_KIND_NONE;
-            hero.carried_entity = NULL;
-            binocle_audio_play_sound(&audio, &sfx_elf_pickup);
+      // Interaction with barrels
+      for (int i = 0; i < MAX_BARRELS ; i++) {
+        if (barrels[i].alive) {
+          if (entity_dist_px(&hero, &barrels[i].entity) < 10) {
+            hero.locked = true;
+            hero.lock_cooldown = 1;
           }
         }
       }
+
+    } else {
+      if (hero.lock_cooldown < 0) {
+        hero.locked = false;
+        hero.lock_cooldown = 0;
+      }
+      hero.lock_cooldown -= (binocle_window_get_frame_time(&window) / 1000.0f);
     }
 
-    if (!hero.on_ground && hero.dy >0) {
+    if (hero.locked) {
+      binocle_sprite_play_animation(&hero.sprite, "heroFall", false);
+    } else if (!hero.on_ground && hero.dy >0) {
       binocle_sprite_play_animation(&hero.sprite, "heroJump", false); // up
     } else if (!hero.on_ground && hero.dy < 0) {
       binocle_sprite_play_animation(&hero.sprite, "heroJump", false); // down
@@ -1712,6 +1764,7 @@ int main(int argc, char *argv[]) {
   binocle_material hero_material = binocle_material_new();
   hero_material.texture = &atlas_texture;
   hero_material.shader = &default_shader;
+  hero = entity_new();
   hero.rot = 0;
   hero.sprite = binocle_sprite_from_material(&hero_material);
   hero.sprite.subtexture = atlas_subtextures[0];
@@ -1736,6 +1789,7 @@ int main(int argc, char *argv[]) {
   binocle_sprite_create_animation(&hero.sprite, "heroIdle", "tiles_00.png,tiles_17.png", "0-1:0.7", true, atlas_subtextures, atlas_subtextures_num);
   binocle_sprite_create_animation(&hero.sprite, "heroWalk", "tiles_18.png,tiles_19.png", "0-1:0.3", true, atlas_subtextures, atlas_subtextures_num);
   binocle_sprite_create_animation(&hero.sprite, "heroJump", "tiles_00.png", "0", false, atlas_subtextures, atlas_subtextures_num);
+  binocle_sprite_create_animation(&hero.sprite, "heroFall", "tiles_00.png,tiles_38.png,tiles_39.png", "0-2:0.1", false, atlas_subtextures, atlas_subtextures_num);
   binocle_sprite_play_animation(&hero.sprite, "heroIdle", false);
 
   // Create the elves
@@ -1743,6 +1797,7 @@ int main(int argc, char *argv[]) {
   elves_material.texture = &atlas_texture;
   elves_material.shader = &default_shader;
   for (int i = 0 ; i < MAX_ELVES ; i++) {
+    elves[i] = entity_new();
     elves[i].rot = 0;
     elves[i].sprite = binocle_sprite_from_material(&elves_material);
     elves[i].sprite.subtexture = atlas_subtextures[1];
@@ -1772,6 +1827,7 @@ int main(int argc, char *argv[]) {
   spawner_material.texture = &atlas_texture;
   spawner_material.shader = &default_shader;
   for (int i = 0 ; i < MAX_SPAWNERS ; i++) {
+    spawners[i].entity = entity_new();
     spawners[i].entity.rot = 0;
     spawners[i].entity.sprite = binocle_sprite_from_material(&spawner_material);
     spawners[i].entity.sprite.subtexture = atlas_subtextures[9+i];
@@ -1836,6 +1892,7 @@ int main(int argc, char *argv[]) {
   barrels_material.texture = &atlas_texture;
   barrels_material.shader = &default_shader;
   for (int i = 0 ; i < MAX_BARRELS ; i++) {
+    barrels[i].entity = entity_new();
     barrels[i].entity.rot = 0;
     barrels[i].entity.sprite = binocle_sprite_from_material(&barrels_material);
     barrels[i].entity.sprite.subtexture = atlas_subtextures[1];
