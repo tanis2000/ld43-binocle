@@ -776,11 +776,11 @@ bool spawn_item(struct entity_t *entity, item_kind_t item_kind) {
   entity->sprite.origin.y = 0.0f * entity->sprite.subtexture.rect.max.y;
   entity->dx = 0;
   entity->dy = 0;
-  entity->xr = 0.5;
-  entity->yr = 1.0;
+  entity->xr = 0.5f;
+  entity->yr = 1.0f;
   entity->cx = 0;
   entity->cy = 0;
-  entity->frict = 0.8;
+  entity->frict = 0.8f;
   entity->has_gravity = false;
   entity->dir = 1;
   entity->scale.x = 1;
@@ -796,11 +796,11 @@ bool spawn_witch(struct entity_t *entity) {
   entity->sprite.origin.y = 0.5f * entity->sprite.subtexture.rect.max.y;
   entity->dx = 0;
   entity->dy = 0;
-  entity->xr = 0.5;
-  entity->yr = 1.0;
+  entity->xr = 0.5f;
+  entity->yr = 1.0f;
   entity->cx = 0;
   entity->cy = 0;
-  entity->frict = 0.8;
+  entity->frict = 0.8f;
   entity->has_gravity = false;
   entity->dir = -1;
   entity->scale.x = 1;
@@ -808,11 +808,13 @@ bool spawn_witch(struct entity_t *entity) {
   return true;
 }
 
+/*
 struct entity_t entity_new() {
   struct entity_t res = { 0 };
   res.hei = GRID;
   return res;
 }
+*/
 
 void entity_set_position(struct entity_t *entity, float x, float y) {
   entity->pos.x = x;
@@ -989,18 +991,18 @@ void witch_update() {
   float center_y = (witch.entity.cy+witch.entity.yr) * GRID;
   float a = atan2f(witch.start_y-center_y, witch.start_x-center_x);
   float s = 0.030f;//0.0030f;
-  witch.entity.dx += cosf(a)*s*(binocle_window_get_frame_time(&window) / 1000.0);
-  witch.entity.dy += sinf(a)*s*(binocle_window_get_frame_time(&window) / 1000.0);
+  witch.entity.dx += cosf(a)*s*(binocle_window_get_frame_time(&window) / 1000.0f);
+  witch.entity.dy += sinf(a)*s*(binocle_window_get_frame_time(&window) / 1000.0f);
 
   s = 0.015f;//0.0015f;
   witch.wander_ang += random_float(0.03f, 0.06f) * (binocle_window_get_frame_time(&window) / 1000.0);
-  witch.entity.dx+= cosf(witch.wander_ang)*s*(binocle_window_get_frame_time(&window) / 1000.0);
-  witch.entity.dy+= sinf(witch.wander_ang)*s*(binocle_window_get_frame_time(&window) / 1000.0);
+  witch.entity.dx+= cosf(witch.wander_ang)*s*(binocle_window_get_frame_time(&window) / 1000.0f);
+  witch.entity.dy+= sinf(witch.wander_ang)*s*(binocle_window_get_frame_time(&window) / 1000.0f);
 
   entity_update(&witch.entity);
 
   if (witch.floating_cooldown > 0) {
-    witch.floating_cooldown -= (binocle_window_get_frame_time(&window) / 1000.0);
+    witch.floating_cooldown -= (binocle_window_get_frame_time(&window) / 1000.0f);
     return;
   }
 
@@ -1016,7 +1018,7 @@ void witch_update() {
   }
 
   if (witch.sacrifice_cooldown > 0) {
-    witch.sacrifice_cooldown -= (binocle_window_get_frame_time(&window) / 1000.0);
+    witch.sacrifice_cooldown -= (binocle_window_get_frame_time(&window) / 1000.0f);
     return;
   }
 
@@ -1110,7 +1112,7 @@ void barrels_spawners_update() {
 }
 
 void update_barrels() {
-  float speed = 0.4;
+  float speed = 0.4f;
   for (int i = 0 ; i < MAX_BARRELS ; i++) {
     if (barrels[i].alive) {
       if (barrels[i].entity.dir == 1) {
@@ -1302,11 +1304,11 @@ void game_update() {
       voice_countdowns[i].enabled = false;
       continue;
     }
-    voice_countdowns[i].cooldown -= (binocle_window_get_frame_time(&window) / 1000.0);
+    voice_countdowns[i].cooldown -= (binocle_window_get_frame_time(&window) / 1000.0f);
   }
 
   if (game_state != GAME_STATE_WITCH) {
-    witch_countdown -= (binocle_window_get_frame_time(&window) / 1000.0);
+    witch_countdown -= (binocle_window_get_frame_time(&window) / 1000.0f);
 
     if (witch_countdown < 0) {
       if (packages_left > 0) {
@@ -1631,7 +1633,7 @@ int main(int argc, char *argv[]) {
   // Init the RNG
   srand48(seed);
   fps_buffer[0] = '\0';
-  color_grey = binocle_color_new(0.3, 0.3, 0.3, 1);
+  color_grey = binocle_color_new(0.3f, 0.3f, 0.3f, 1);
   // Init SDL
   binocle_sdl_init();
   // Create the window
@@ -1764,7 +1766,8 @@ int main(int argc, char *argv[]) {
   binocle_material hero_material = binocle_material_new();
   hero_material.texture = &atlas_texture;
   hero_material.shader = &default_shader;
-  hero = entity_new();
+  //hero = entity_new();
+  hero.hei = GRID;
   hero.rot = 0;
   hero.sprite = binocle_sprite_from_material(&hero_material);
   hero.sprite.subtexture = atlas_subtextures[0];
@@ -1772,11 +1775,11 @@ int main(int argc, char *argv[]) {
   hero.sprite.origin.y = 0.0f * hero.sprite.subtexture.rect.max.y;
   hero.dx = 0;
   hero.dy = 0;
-  hero.xr = 0.5;
-  hero.yr = 1.0;
+  hero.xr = 0.5f;
+  hero.yr = 1.0f;
   hero.cx = 7;
   hero.cy = 5;
-  hero.frict = 0.8;
+  hero.frict = 0.8f;
   hero.has_gravity = true;
   hero.dir = 1;
 
@@ -1797,7 +1800,8 @@ int main(int argc, char *argv[]) {
   elves_material.texture = &atlas_texture;
   elves_material.shader = &default_shader;
   for (int i = 0 ; i < MAX_ELVES ; i++) {
-    elves[i] = entity_new();
+    //elves[i] = entity_new();
+    elves[i].hei = GRID;
     elves[i].rot = 0;
     elves[i].sprite = binocle_sprite_from_material(&elves_material);
     elves[i].sprite.subtexture = atlas_subtextures[1];
@@ -1805,11 +1809,11 @@ int main(int argc, char *argv[]) {
     elves[i].sprite.origin.y = 0.0f * elves[i].sprite.subtexture.rect.max.y;
     elves[i].dx = 0;
     elves[i].dy = 0;
-    elves[i].xr = 0.5;
-    elves[i].yr = 1.0;
+    elves[i].xr = 0.5f;
+    elves[i].yr = 1.0f;
     elves[i].cx = (int)(drand48() * (map_width_in_tiles - 2) + 1);
     elves[i].cy = 5;
-    elves[i].frict = 0.8;
+    elves[i].frict = 0.8f;
     elves[i].has_gravity = true;
     elves[i].dir = random_int(0, 1) == 0 ? -1 : 1;
 
@@ -1827,7 +1831,8 @@ int main(int argc, char *argv[]) {
   spawner_material.texture = &atlas_texture;
   spawner_material.shader = &default_shader;
   for (int i = 0 ; i < MAX_SPAWNERS ; i++) {
-    spawners[i].entity = entity_new();
+    //spawners[i].entity = entity_new();
+    spawners[i].entity.hei = GRID;
     spawners[i].entity.rot = 0;
     spawners[i].entity.sprite = binocle_sprite_from_material(&spawner_material);
     spawners[i].entity.sprite.subtexture = atlas_subtextures[9+i];
@@ -1835,11 +1840,11 @@ int main(int argc, char *argv[]) {
     spawners[i].entity.sprite.origin.y = 0.0f * spawners[i].entity.sprite.subtexture.rect.max.y;
     spawners[i].entity.dx = 0;
     spawners[i].entity.dy = 0;
-    spawners[i].entity.xr = 0.5;
-    spawners[i].entity.yr = 1.0;
+    spawners[i].entity.xr = 0.5f;
+    spawners[i].entity.yr = 1.0f;
     spawners[i].entity.cx = 0;
     spawners[i].entity.cy = 0;
-    spawners[i].entity.frict = 0.8;
+    spawners[i].entity.frict = 0.8f;
     spawners[i].entity.has_gravity = true;
     spawners[i].entity.dir = 1;
     spawners[i].entity.scale.x = 1;
@@ -1892,7 +1897,8 @@ int main(int argc, char *argv[]) {
   barrels_material.texture = &atlas_texture;
   barrels_material.shader = &default_shader;
   for (int i = 0 ; i < MAX_BARRELS ; i++) {
-    barrels[i].entity = entity_new();
+    //barrels[i].entity = entity_new();
+    barrels[i].entity.hei = GRID;
     barrels[i].entity.rot = 0;
     barrels[i].entity.sprite = binocle_sprite_from_material(&barrels_material);
     barrels[i].entity.sprite.subtexture = atlas_subtextures[1];
@@ -1900,11 +1906,11 @@ int main(int argc, char *argv[]) {
     barrels[i].entity.sprite.origin.y = 0.0f * barrels[i].entity.sprite.subtexture.rect.max.y;
     barrels[i].entity.dx = 0;
     barrels[i].entity.dy = 0;
-    barrels[i].entity.xr = 0.5;
-    barrels[i].entity.yr = 1.0;
+    barrels[i].entity.xr = 0.5f;
+    barrels[i].entity.yr = 1.0f;
     barrels[i].entity.cx = 0;
     barrels[i].entity.cy = 0;
-    barrels[i].entity.frict = 0.8;
+    barrels[i].entity.frict = 0.8f;
     barrels[i].entity.has_gravity = true;
     barrels[i].entity.dir = 1;
 
