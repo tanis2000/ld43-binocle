@@ -143,6 +143,8 @@ if (APPLE)
             )
     message("Resources list: ${RESOURCES}")
     #endif()
+  elseif (WIN32)
+    file(COPY ${CMAKE_SOURCE_DIR}/assets DESTINATION ${CMAKE_BINARY_DIR}/src)
 endif ()
 
 

@@ -685,7 +685,7 @@ void load_tilemap() {
   }
 
   cute_tiled_free_map(map);
-  free(json); // TODO: this causes errors on Windows. Find out why
+  //free(json); // TODO: this causes errors on Windows. Find out why
 
 }
 
@@ -1629,6 +1629,10 @@ void init_fonts() {
 
 void destroy_fonts() { binocle_bitmapfont_destroy(font); }
 
+void destroy_sprites() {
+  // TODO: call binocle_sprite_destroy() on all the sprites we created
+}
+
 int main(int argc, char *argv[]) {
   // Init the RNG
   srand48(seed);
@@ -1668,6 +1672,14 @@ int main(int argc, char *argv[]) {
 #if defined(__EMSCRIPTEN__)
   binocle_data_dir = malloc(1024);
   sprintf(binocle_data_dir, "/Users/tanis/Documents/ld43-binocle/assets/");
+#elif defined(__WINDOWS__)
+  char *base_path = SDL_GetBasePath();
+  if (base_path) {
+    binocle_data_dir = malloc(strlen(base_path) + 7);
+    sprintf(binocle_data_dir, "%s%s", base_path, "assets\\");
+  } else {
+    binocle_data_dir = SDL_strdup("./assets");
+  }
 #else
   char *base_path = SDL_GetBasePath();
   if (base_path) {
@@ -2035,6 +2047,7 @@ int main(int argc, char *argv[]) {
 #endif
   destroy_fonts();
   binocle_audio_destroy(&audio);
+  destroy_sprites();
   binocle_sdl_exit();
 
   return 0;
