@@ -142,7 +142,7 @@ struct particle_t {
 };
 
 struct countdown_voice_t {
-  binocle_sound *sound;
+  binocle_audio_sound *sound;
   float cooldown_original;
   float cooldown;
   bool enabled;
@@ -198,10 +198,10 @@ binocle_render_target ui_buffer;
 binocle_shader default_shader;
 binocle_shader quad_shader;
 binocle_shader ui_shader;
-float time = 0;
+float running_time = 0;
 binocle_audio audio;
-binocle_music *music;
-binocle_music *game_music;
+binocle_audio_music *music;
+binocle_audio_music *game_music;
 binocle_texture player_texture;
 binocle_texture texture;
 int num_frames = 0;
@@ -235,20 +235,20 @@ struct particle_t particles[MAX_PARTICLES];
 binocle_sprite star_sprite;
 binocle_sprite cloud_sprite;
 binocle_sprite box_sprite;
-binocle_sound sfx_santa_jump;
-binocle_sound sfx_santa_freeze;
-binocle_sound sfx_santa_pickup;
-binocle_sound sfx_witch_laugh;
-binocle_sound sfx_elf_freeze;
-binocle_sound sfx_elf_pickup;
-binocle_sound sfx_elf_throw;
-binocle_sound sfx_go;
-binocle_sound sfx_level_completed;
-binocle_sound sfx_cd_5;
-binocle_sound sfx_cd_4;
-binocle_sound sfx_cd_3;
-binocle_sound sfx_cd_2;
-binocle_sound sfx_cd_1;
+binocle_audio_sound sfx_santa_jump;
+binocle_audio_sound sfx_santa_freeze;
+binocle_audio_sound sfx_santa_pickup;
+binocle_audio_sound sfx_witch_laugh;
+binocle_audio_sound sfx_elf_freeze;
+binocle_audio_sound sfx_elf_pickup;
+binocle_audio_sound sfx_elf_throw;
+binocle_audio_sound sfx_go;
+binocle_audio_sound sfx_level_completed;
+binocle_audio_sound sfx_cd_5;
+binocle_audio_sound sfx_cd_4;
+binocle_audio_sound sfx_cd_3;
+binocle_audio_sound sfx_cd_2;
+binocle_audio_sound sfx_cd_1;
 struct countdown_voice_t voice_countdowns[MAX_COUNTDOWN_VOICE];
 char *binocle_data_dir = NULL;
 float camera_shake_cooldown = 0.0f;
@@ -397,8 +397,9 @@ void draw_gui() {
           elves[i].dead = false;
         }
         reset_voice_countdowns(witch_countdown);
-        binocle_audio_play_music(&audio, game_music, true);
-        binocle_audio_set_music_volume(64);
+        binocle_audio_set_music_loop_count(game_music, -1);
+        binocle_audio_set_music_volume(game_music, 0.25f);
+        binocle_audio_play_music_stream(game_music);
         game_state = GAME_STATE_RUN;
       }
       if (nk_button_label(&ctx, "Quit")) {
@@ -965,7 +966,7 @@ void elves_update() {
         free(elves[i].carried_entity);
         elves[i].carried_entity = NULL;
         spawn_particle_with_target(&box_sprite, elves[i].pos.x, elves[i].pos.y, 20 * GRID, 5 * GRID, 0.5f);
-        binocle_audio_play_sound(&audio, &sfx_elf_throw);
+        binocle_audio_play_sound(sfx_elf_throw);
         score += 1;
         packages_left -= 1;
         if (packages_left < 0) {
@@ -983,7 +984,7 @@ void elves_update() {
 void kill_elf(struct entity_t *elf) {
   elf->dead = true;
   spawn_particle(&cloud_sprite, elf->pos.x, elf->pos.y, 1, 5);
-  binocle_audio_play_sound(&audio, &sfx_elf_freeze);
+  binocle_audio_play_sound(sfx_elf_freeze);
 }
 
 void witch_update() {
@@ -1031,14 +1032,15 @@ void witch_update() {
 
   if (elves_alive == 0) {
     game_state = GAME_STATE_GAMEOVER;
-    binocle_audio_play_music(&audio, music, true);
-    binocle_audio_set_music_volume(64);
+    binocle_audio_set_music_loop_count(music, -1);
+    binocle_audio_set_music_volume(music, 0.25f);
+    binocle_audio_play_music_stream(music);
     return;
   }
 
   // Back to game with one elf less
   witch_countdown = witch_countdown_original;
-  binocle_audio_play_sound(&audio, &sfx_go);
+  binocle_audio_play_sound(sfx_go);
   game_state = GAME_STATE_RUN;
 }
 
@@ -1177,7 +1179,7 @@ void game_update() {
         if (hero.on_ground) {
           hero.dy = 30.0f * (binocle_window_get_frame_time(&window) / 1000.0f);
           hero.dx *= 1.2f;
-          binocle_audio_play_sound(&audio, &sfx_santa_jump);
+          binocle_audio_play_sound(sfx_santa_jump);
         }
       } else if (binocle_input_is_key_pressed(input, KEY_DOWN)) {
       }
@@ -1191,19 +1193,19 @@ void game_update() {
               hero.carried_item_kind = ITEM_KIND_TOY;
               hero.carried_entity = malloc(sizeof(struct entity_t));
               spawn_item(hero.carried_entity, ITEM_KIND_TOY);
-              binocle_audio_play_sound(&audio, &sfx_santa_pickup);
+              binocle_audio_play_sound(sfx_santa_pickup);
             } else if (hero.carried_item_kind == ITEM_KIND_TOY && spawners[i].item_kind == ITEM_KIND_PACKAGE) {
               hero.carried_item_kind = ITEM_KIND_PACKAGE;
               free(hero.carried_entity);
               hero.carried_entity = malloc(sizeof(struct entity_t));
               spawn_item(hero.carried_entity, ITEM_KIND_PACKAGE);
-              binocle_audio_play_sound(&audio, &sfx_santa_pickup);
+              binocle_audio_play_sound(sfx_santa_pickup);
             } else if (hero.carried_item_kind == ITEM_KIND_PACKAGE && spawners[i].item_kind == ITEM_KIND_WRAP) {
               hero.carried_item_kind = ITEM_KIND_WRAP;
               free(hero.carried_entity);
               hero.carried_entity = malloc(sizeof(struct entity_t));
               spawn_item(hero.carried_entity, ITEM_KIND_WRAP);
-              binocle_audio_play_sound(&audio, &sfx_santa_pickup);
+              binocle_audio_play_sound(sfx_santa_pickup);
             }
           }
         }
@@ -1217,7 +1219,7 @@ void game_update() {
               elves[i].carried_entity = hero.carried_entity;
               hero.carried_item_kind = ITEM_KIND_NONE;
               hero.carried_entity = NULL;
-              binocle_audio_play_sound(&audio, &sfx_elf_pickup);
+              binocle_audio_play_sound(sfx_elf_pickup);
             }
           }
         }
@@ -1300,7 +1302,7 @@ void game_update() {
 
   for (int i = 0 ; i < MAX_COUNTDOWN_VOICE ; i++) {
     if (voice_countdowns[i].enabled && voice_countdowns[i].cooldown < 0) {
-      binocle_audio_play_sound(&audio, voice_countdowns[i].sound);
+      binocle_audio_play_sound(*voice_countdowns[i].sound);
       voice_countdowns[i].enabled = false;
       continue;
     }
@@ -1323,8 +1325,8 @@ void game_update() {
         witch.sacrifice_cooldown = 5;
         witch.sacrifice_done = false;
         spawn_particle(&star_sprite, witch.entity.pos.x, witch.entity.pos.y, 2, 10);
-        binocle_audio_play_sound(&audio, &sfx_witch_laugh);
-        binocle_audio_play_sound(&audio, &sfx_santa_freeze);
+        binocle_audio_play_sound(sfx_witch_laugh);
+        binocle_audio_play_sound(sfx_santa_freeze);
         start_camera_shake();
         game_state = GAME_STATE_WITCH;
       } else {
@@ -1332,7 +1334,7 @@ void game_update() {
         witch_countdown_original = witch_countdown_original * 0.9f;
         witch_countdown = witch_countdown_original;
         spawn_particle(&star_sprite, design_width / 2.0f, design_height / 2.0f, 5, 20);
-        binocle_audio_play_sound(&audio, &sfx_level_completed);
+        binocle_audio_play_sound(sfx_level_completed);
         reset_voice_countdowns(witch_countdown);
       }
     }
@@ -1561,7 +1563,7 @@ void main_loop() {
 
     binocle_gd_set_render_target(screen_render_target);
     binocle_gd_apply_shader(&gd, quad_shader);
-    binocle_gd_set_uniform_float(quad_shader, "time", time);
+    //binocle_gd_set_uniform_float(quad_shader, "time", running_time);
     binocle_gd_set_uniform_float2(quad_shader, "resolution", design_width,
                                   design_height);
     binocle_gd_set_uniform_mat4(quad_shader, "transform", camera_transform_mat);
@@ -1583,7 +1585,7 @@ void main_loop() {
                          design_height, &vp, &multiplier, &camera_transform_mat);
   kmMat4Identity(&camera_transform_mat);
   binocle_gd_apply_viewport(vp);
-  binocle_gd_set_uniform_float(quad_shader, "time", time);
+  //binocle_gd_set_uniform_float(quad_shader, "time", running_time);
   binocle_gd_set_uniform_float2(quad_shader, "resolution", design_width,
                                 design_height);
   // kmMat4Translation(&camera_transform_mat, 1.0f -
@@ -1594,7 +1596,7 @@ void main_loop() {
   binocle_gd_set_uniform_float2(quad_shader, "viewport", vp.min.x, vp.min.y);
   binocle_gd_draw_quad_to_screen(quad_shader, screen_render_target);
 
-  time += (binocle_window_get_frame_time(&window) / 1000.0);
+  running_time += (binocle_window_get_frame_time(&window) / 1000.0);
 
   // Blit screen
   binocle_window_refresh(&window);
@@ -1949,84 +1951,58 @@ int main(int argc, char *argv[]) {
   // Audio has some issues with emscripten at the moment
 //#if !defined __EMSCRIPTEN__
   audio = binocle_audio_new();
+  binocle_audio_init(&audio);
   sprintf(filename, "%s%s", binocle_data_dir, "maintheme.ogg");
-  music = binocle_audio_load_music(&audio, filename);
-  binocle_audio_play_music(&audio, music, true);
-  binocle_audio_set_music_volume(64);
+  music = binocle_audio_load_music_stream(&audio, filename);
+  binocle_audio_set_music_loop_count(music, -1);
+  binocle_audio_set_music_volume(music, 0.25);
+  binocle_audio_play_music_stream(music);
 
   sprintf(filename, "%s%s", binocle_data_dir, "xmas.ogg");
-  game_music = binocle_audio_load_music(&audio, filename);
+  game_music = binocle_audio_load_music_stream(&audio, filename);
 
   sprintf(filename, "%s%s", binocle_data_dir, "santa_jump.ogg");
-  sfx_santa_jump = binocle_sound_new();
-  if (!binocle_audio_load_sound(&audio, filename, &sfx_santa_jump)) {
-    binocle_log_error("Error loading sound %s", filename);
-  }
+  sfx_santa_jump = binocle_audio_load_sound(&audio, filename);
+
   sprintf(filename, "%s%s", binocle_data_dir, "santa_freeze.ogg");
-  sfx_santa_freeze = binocle_sound_new();
-  if (!binocle_audio_load_sound(&audio, filename, &sfx_santa_freeze)) {
-    binocle_log_error("Error loading sound %s", filename);
-  }
+  sfx_santa_freeze = binocle_audio_load_sound(&audio, filename);
+
   sprintf(filename, "%s%s", binocle_data_dir, "santa_pickup.ogg");
-  sfx_santa_pickup = binocle_sound_new();
-  if (!binocle_audio_load_sound(&audio, filename, &sfx_santa_pickup)) {
-    binocle_log_error("Error loading sound %s", filename);
-  }
+  sfx_santa_pickup = binocle_audio_load_sound(&audio, filename);
+
   sprintf(filename, "%s%s", binocle_data_dir, "witch_laugh.ogg");
-  sfx_witch_laugh = binocle_sound_new();
-  if (!binocle_audio_load_sound(&audio, filename, &sfx_witch_laugh)) {
-    binocle_log_error("Error loading sound %s", filename);
-  }
+  sfx_witch_laugh = binocle_audio_load_sound(&audio, filename);
+
   sprintf(filename, "%s%s", binocle_data_dir, "elf_freeze.ogg");
-  sfx_elf_freeze = binocle_sound_new();
-  if (!binocle_audio_load_sound(&audio, filename, &sfx_elf_freeze)) {
-    binocle_log_error("Error loading sound %s", filename);
-  }
+  sfx_elf_freeze = binocle_audio_load_sound(&audio, filename);
+
   sprintf(filename, "%s%s", binocle_data_dir, "elf_pickup.ogg");
-  sfx_elf_pickup = binocle_sound_new();
-  if (!binocle_audio_load_sound(&audio, filename, &sfx_elf_pickup)) {
-    binocle_log_error("Error loading sound %s", filename);
-  }
+  sfx_elf_pickup = binocle_audio_load_sound(&audio, filename);
+
   sprintf(filename, "%s%s", binocle_data_dir, "elf_throw.ogg");
-  sfx_elf_throw = binocle_sound_new();
-  if (!binocle_audio_load_sound(&audio, filename, &sfx_elf_throw)) {
-    binocle_log_error("Error loading sound %s", filename);
-  }
+  sfx_elf_throw = binocle_audio_load_sound(&audio, filename);
+
   sprintf(filename, "%s%s", binocle_data_dir, "go.ogg");
-  sfx_go = binocle_sound_new();
-  if (!binocle_audio_load_sound(&audio, filename, &sfx_go)) {
-    binocle_log_error("Error loading sound %s", filename);
-  }
+  sfx_go = binocle_audio_load_sound(&audio, filename);
+
   sprintf(filename, "%s%s", binocle_data_dir, "you_win.ogg");
-  sfx_level_completed = binocle_sound_new();
-  if (!binocle_audio_load_sound(&audio, filename, &sfx_level_completed)) {
-    binocle_log_error("Error loading sound %s", filename);
-  }
+  sfx_level_completed = binocle_audio_load_sound(&audio, filename);
+
   sprintf(filename, "%s%s", binocle_data_dir, "cd_5.ogg");
-  sfx_cd_5 = binocle_sound_new();
-  if (!binocle_audio_load_sound(&audio, filename, &sfx_cd_5)) {
-    binocle_log_error("Error loading sound %s", filename);
-  }
+  sfx_cd_5 = binocle_audio_load_sound(&audio, filename);
+
   sprintf(filename, "%s%s", binocle_data_dir, "cd_4.ogg");
-  sfx_cd_4 = binocle_sound_new();
-  if (!binocle_audio_load_sound(&audio, filename, &sfx_cd_4)) {
-    binocle_log_error("Error loading sound %s", filename);
-  }
+  sfx_cd_4 = binocle_audio_load_sound(&audio, filename);
+
   sprintf(filename, "%s%s", binocle_data_dir, "cd_3.ogg");
-  sfx_cd_3 = binocle_sound_new();
-  if (!binocle_audio_load_sound(&audio, filename, &sfx_cd_3)) {
-    binocle_log_error("Error loading sound %s", filename);
-  }
+  sfx_cd_3 = binocle_audio_load_sound(&audio, filename);
+
   sprintf(filename, "%s%s", binocle_data_dir, "cd_2.ogg");
-  sfx_cd_2 = binocle_sound_new();
-  if (!binocle_audio_load_sound(&audio, filename, &sfx_cd_2)) {
-    binocle_log_error("Error loading sound %s", filename);
-  }
+  sfx_cd_2 = binocle_audio_load_sound(&audio, filename);
+
   sprintf(filename, "%s%s", binocle_data_dir, "cd_1.ogg");
-  sfx_cd_1 = binocle_sound_new();
-  if (!binocle_audio_load_sound(&audio, filename, &sfx_cd_1)) {
-    binocle_log_error("Error loading sound %s", filename);
-  }
+  sfx_cd_1 = binocle_audio_load_sound(&audio, filename);
+
 //#endif
 
   // Create the main render target (screen)
