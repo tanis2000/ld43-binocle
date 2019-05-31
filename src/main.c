@@ -1470,6 +1470,7 @@ void main_loop() {
   binocle_window_begin_frame(&window);
   binocle_input_update(&input);
   pass_input_to_gui(&input);
+  binocle_audio_update_music_stream(music);
 
   if (input.resized) {
     kmVec2 oldWindowSize = {.x = window.width, .y = window.height};
